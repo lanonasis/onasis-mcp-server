@@ -74,11 +74,11 @@ jobs:
         
         # Install dependencies
         echo "📦 Installing dependencies..."
-        npm install --production || npm ci --production
+        bun install --production --frozen-lockfile || bun install --production
         
         # Build TypeScript (skip due to compilation issues, using CommonJS fallback)
         echo "🔨 Building TypeScript..."
-        npm run build || echo "⚠️  Build failed, using CommonJS fallback"
+        bun run build || echo "⚠️  Build failed, using CommonJS fallback"
         
         # Setup environment
         echo "⚙️  Configuring environment..."
