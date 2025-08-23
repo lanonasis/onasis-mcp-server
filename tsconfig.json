@@ -33,7 +33,8 @@
     "types": ["node", "jest"]
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "src/types/express-extensions.d.ts"
   ],
   "exclude": [
     "node_modules",

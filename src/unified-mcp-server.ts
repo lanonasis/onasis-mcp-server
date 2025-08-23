@@ -78,6 +78,17 @@ process.env.DEBUG = '';
  * Unified MCP Server supporting multiple protocols
  */
 class LanonasisUnifiedMCPServer {
+  // Class property declarations
+  private config: any;
+  private supabase: any;
+  private memoryService: any;
+  private currentAuthContext: any;
+  private mcpServer: any;
+  private httpServer: any;
+  private wsServer: any;
+  private sseClients: Set<any>;
+  private tools: any;
+
   constructor() {
     this.config = {
       // Server ports
