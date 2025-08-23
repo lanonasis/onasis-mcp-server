@@ -30,6 +30,10 @@ import winston from 'winston';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import crypto from 'crypto';
+
+// Import the routed memory service
+import { MemoryService } from './services/memoryService-routed.js';
 
 // Load environment
 const __filename = fileURLToPath(import.meta.url);
@@ -99,8 +103,14 @@ class LanonasisUnifiedMCPServer {
       supabaseSSLCert: process.env.SUPABASE_SSL_CERT_PATH
     };
 
-    // Initialize Supabase client
+    // Initialize Supabase client (legacy - for non-memory operations)
     this.supabase = createClient(this.config.supabaseUrl, this.config.supabaseKey);
+    
+    // Initialize routed memory service (routes through Onasis-CORE)
+    this.memoryService = new MemoryService(undefined, process.env.ONASIS_CORE_URL);
+    
+    // Current authentication context (will be set per request)
+    this.currentAuthContext = null;
     
     // Initialize servers
     this.mcpServer = null;
@@ -558,6 +568,14 @@ class LanonasisUnifiedMCPServer {
             });
           }
 
+          // Extract authentication context from request headers
+          const authHeader = req.headers.authorization;
+          const apiKey = req.headers['x-api-key'] || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null);
+          
+          // Set authentication context for this request
+          // TODO: Decode JWT or validate API key to get actual user/org info
+          this.setAuthContext(apiKey, undefined, undefined);
+
           const result = await handler(args || {});
           return res.json({
             jsonrpc: '2.0',
@@ -629,6 +647,14 @@ class LanonasisUnifiedMCPServer {
               }));
               return;
             }
+
+            // Extract authentication context from WebSocket request
+            // TODO: Get API key from WebSocket connection context or initial handshake
+            const apiKey = ws.upgradeReq?.headers?.['x-api-key'] || null;
+            
+            // Set authentication context for this request
+            // TODO: Decode JWT or validate API key to get actual user/org info
+            this.setAuthContext(apiKey, undefined, undefined);
 
             const result = await handler(args || {});
             ws.send(JSON.stringify({
@@ -748,55 +774,58 @@ class LanonasisUnifiedMCPServer {
     });
   }
 
+  /**
+   * Set authentication context for the current request
+   */
+  setAuthContext(apiKey, userId, organizationId) {
+    this.currentAuthContext = {
+      apiKey,
+      userId: userId || 'mcp-server',
+      organizationId: organizationId || 'mcp-default'
+    };
+    
+    // Update the memory service with the authentication token
+    if (apiKey) {
+      this.memoryService.setAuthToken(apiKey);
+    }
+  }
+  
+  /**
+   * Get current authentication context with fallbacks
+   */
+  getAuthContext() {
+    return this.currentAuthContext || {
+      apiKey: null,
+      userId: 'mcp-server',
+      organizationId: 'mcp-default'
+    };
+  }
+
   // Tool Implementations
   async createMemoryTool(args) {
     try {
-      // Generate embedding for the content
-      const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          input: args.content,
-          model: 'text-embedding-ada-002'
-        })
+      const authContext = this.getAuthContext();
+      
+      // Use the routed memory service instead of direct Supabase/OpenAI calls
+      const memory = await this.memoryService.createMemory(crypto.randomUUID(), {
+        title: args.title,
+        content: args.content,
+        memory_type: args.memory_type || 'knowledge',
+        tags: args.tags || [],
+        topic_id: args.topic_id,
+        user_id: authContext.userId,
+        group_id: authContext.organizationId,
+        metadata: {
+          source: 'mcp-server',
+          created_via: 'tool_call'
+        }
       });
 
-      if (!embeddingResponse.ok) {
-        throw new Error('Failed to generate embedding');
-      }
-
-      const embeddingData = await embeddingResponse.json();
-      const embedding = embeddingData.data[0].embedding;
-
-      // Insert memory into Supabase
-      const { data, error } = await this.supabase
-        .from('memory_entries')
-        .insert({
-          title: args.title,
-          content: args.content,
-          memory_type: args.memory_type || 'knowledge',
-          tags: args.tags || [],
-          topic_id: args.topic_id,
-          embedding,
-          status: 'active',
-          metadata: {
-            source: 'mcp-server',
-            created_via: 'tool_call'
-          }
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      logger.info('Memory created via MCP', { id: data.id, title: args.title });
+      logger.info('Memory created via MCP', { id: memory.id, title: args.title });
 
       return {
         success: true,
-        memory: data,
+        memory: memory,
         message: 'Memory created successfully'
       };
     } catch (error) {
@@ -810,57 +839,31 @@ class LanonasisUnifiedMCPServer {
 
   async searchMemoriesTool(args) {
     try {
-      // Generate embedding for the query
-      const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          input: args.query,
-          model: 'text-embedding-ada-002'
-        })
-      });
-
-      if (!embeddingResponse.ok) {
-        throw new Error('Failed to generate embedding for search');
-      }
-
-      const embeddingData = await embeddingResponse.json();
-      const embedding = embeddingData.data[0].embedding;
-
-      // Search memories using vector similarity
-      const { data: memories, error } = await this.supabase.rpc('match_memories', {
-        query_embedding: embedding,
-        match_threshold: args.threshold || 0.7,
-        match_count: args.limit || 10
-      });
-
-      if (error) throw error;
-
-      // Apply additional filters if specified
-      let filteredMemories = memories || [];
+      const authContext = this.getAuthContext();
       
-      if (args.memory_type) {
-        filteredMemories = filteredMemories.filter(m => m.memory_type === args.memory_type);
-      }
-      
-      if (args.tags && args.tags.length > 0) {
-        filteredMemories = filteredMemories.filter(m => 
-          args.tags.some(tag => m.tags.includes(tag))
-        );
-      }
+      // Use the routed memory service instead of direct Supabase/OpenAI calls
+      const results = await this.memoryService.searchMemories(
+        args.query, 
+        authContext.organizationId,
+        {
+          limit: args.limit || 10,
+          threshold: args.threshold || 0.7,
+          memory_types: args.memory_type ? [args.memory_type] : undefined,
+          tags: args.tags || undefined,
+          topic_id: args.topic_id || undefined,
+          user_id: authContext.userId
+        }
+      );
 
       logger.info('Memory search completed via MCP', { 
         query: args.query, 
-        resultCount: filteredMemories.length 
+        resultCount: results.length 
       });
 
       return {
         success: true,
-        memories: filteredMemories,
-        count: filteredMemories.length,
+        memories: results,
+        count: results.length,
         query: args.query
       };
     } catch (error) {
@@ -874,18 +877,24 @@ class LanonasisUnifiedMCPServer {
 
   async getMemoryTool(args) {
     try {
-      const { data, error } = await this.supabase
-        .from('memory_entries')
-        .select('*')
-        .eq('id', args.id)
-        .eq('status', 'active')
-        .single();
+      const authContext = this.getAuthContext();
+      
+      // Use the routed memory service instead of direct Supabase calls
+      const memory = await this.memoryService.getMemoryById(
+        args.id, 
+        authContext.organizationId
+      );
 
-      if (error) throw error;
+      if (!memory) {
+        return {
+          success: false,
+          error: 'Memory not found'
+        };
+      }
 
       return {
         success: true,
-        memory: data
+        memory: memory
       };
     } catch (error) {
       return {
@@ -897,45 +906,21 @@ class LanonasisUnifiedMCPServer {
 
   async updateMemoryTool(args) {
     try {
-      const updates = { updated_at: new Date().toISOString() };
+      // Use the routed memory service instead of direct Supabase/OpenAI calls
+      const updateData = {};
       
-      if (args.title) updates.title = args.title;
-      if (args.content) updates.content = args.content;
-      if (args.memory_type) updates.memory_type = args.memory_type;
-      if (args.tags) updates.tags = args.tags;
+      if (args.title !== undefined) updateData.title = args.title;
+      if (args.content !== undefined) updateData.content = args.content;
+      if (args.memory_type !== undefined) updateData.memory_type = args.memory_type;
+      if (args.tags !== undefined) updateData.tags = args.tags;
+      if (args.topic_id !== undefined) updateData.topic_id = args.topic_id;
+      if (args.metadata !== undefined) updateData.metadata = args.metadata;
 
-      // If content is updated, regenerate embedding
-      if (args.content) {
-        const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            input: args.content,
-            model: 'text-embedding-ada-002'
-          })
-        });
-
-        if (embeddingResponse.ok) {
-          const embeddingData = await embeddingResponse.json();
-          updates.embedding = embeddingData.data[0].embedding;
-        }
-      }
-
-      const { data, error } = await this.supabase
-        .from('memory_entries')
-        .update(updates)
-        .eq('id', args.id)
-        .select()
-        .single();
-
-      if (error) throw error;
+      const memory = await this.memoryService.updateMemory(args.id, updateData);
 
       return {
         success: true,
-        memory: data,
+        memory: memory,
         message: 'Memory updated successfully'
       };
     } catch (error) {
@@ -948,14 +933,8 @@ class LanonasisUnifiedMCPServer {
 
   async deleteMemoryTool(args) {
     try {
-      const { data, error } = await this.supabase
-        .from('memory_entries')
-        .update({ status: 'deleted', deleted_at: new Date().toISOString() })
-        .eq('id', args.id)
-        .select()
-        .single();
-
-      if (error) throw error;
+      // Use the routed memory service instead of direct Supabase calls
+      await this.memoryService.deleteMemory(args.id);
 
       return {
         success: true,
@@ -972,40 +951,36 @@ class LanonasisUnifiedMCPServer {
 
   async listMemoriesTool(args) {
     try {
-      let query = this.supabase
-        .from('memory_entries')
-        .select('id, title, memory_type, tags, created_at, updated_at, access_count')
-        .eq('status', 'active');
-
-      if (args.memory_type) {
-        query = query.eq('memory_type', args.memory_type);
-      }
-
-      if (args.tags && args.tags.length > 0) {
-        query = query.contains('tags', args.tags);
-      }
-
-      const sortColumn = args.sort || 'updated_at';
-      const sortOrder = args.order || 'desc';
-      query = query.order(sortColumn, { ascending: sortOrder === 'asc' });
-
-      const limit = Math.min(args.limit || 20, 100); // Cap at 100
-      const offset = args.offset || 0;
+      const authContext = this.getAuthContext();
       
-      query = query.range(offset, offset + limit - 1);
+      // Use the routed memory service instead of direct Supabase calls
+      const filters = {
+        organization_id: authContext.organizationId,
+        user_id: undefined, // Let the service handle user filtering based on auth
+        memory_type: args.memory_type,
+        tags: args.tags,
+        topic_id: args.topic_id
+      };
 
-      const { data, error, count } = await query;
+      const options = {
+        page: Math.floor((args.offset || 0) / (args.limit || 20)) + 1,
+        limit: Math.min(args.limit || 20, 100), // Cap at 100
+        sort: args.sort || 'updated_at',
+        order: args.order || 'desc'
+      };
 
-      if (error) throw error;
+      const result = await this.memoryService.listMemories(filters, options);
 
       return {
         success: true,
-        memories: data || [],
-        count: data?.length || 0,
+        memories: result.memories,
+        count: result.memories.length,
         pagination: {
-          limit,
-          offset,
-          total: count
+          limit: options.limit,
+          offset: args.offset || 0,
+          total: result.pagination.total,
+          page: result.pagination.page,
+          pages: result.pagination.pages
         }
       };
     } catch (error) {

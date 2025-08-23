@@ -8,7 +8,10 @@ const envSchema = z.object({
   PORT: z.string().transform(Number).default('3000'),
   HOST: z.string().default('localhost'),
   
-  // Database
+  // Onasis-CORE Gateway (Preferred routing method)
+  ONASIS_CORE_URL: z.string().url().default('https://api.lanonasis.com'),
+  
+  // Database (Legacy - Direct access)
   SUPABASE_URL: z.string().url(),
   SUPABASE_KEY: z.string().min(1),
   SUPABASE_SERVICE_KEY: z.string().min(1),

@@ -61,7 +61,6 @@ const createJWTMiddleware = (config) => {
     };
   };
 };
-};
 
 // Configuration with fail-fast validation
 const SUPABASE_URL = (typeof process !== 'undefined' ? process.env.SUPABASE_URL : null) || 'https://lanonasis.supabase.co';
