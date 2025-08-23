@@ -74,12 +74,22 @@ process.env.DEBUG = '';
  * Unified MCP Server supporting multiple protocols
  */
 class LanonasisUnifiedMCPServer {
+  private config: any;
+  private supabase: any;
+  private memoryService: any;
+  private currentAuthContext: any;
+  private mcpServer: any;
+  private httpServer: any;
+  private wsServer: any;
+  private sseClients: Set<any>;
+  private tools: any;
+
   constructor() {
     this.config = {
       // Server ports
-      httpPort: parseInt(process.env.PORT) || 3001,
-      wsPort: parseInt(process.env.MCP_WS_PORT) || 3002,
-      ssePort: parseInt(process.env.MCP_SSE_PORT) || 3003,
+      httpPort: parseInt(process.env.PORT || '3001'),
+      wsPort: parseInt(process.env.MCP_WS_PORT || '3002'),
+      ssePort: parseInt(process.env.MCP_SSE_PORT || '3003'),
       host: process.env.MCP_HOST || '0.0.0.0',
       
       // Features
@@ -89,13 +99,13 @@ class LanonasisUnifiedMCPServer {
       enableStdio: process.env.ENABLE_STDIO !== 'false',
       
       // Security
-      rateLimitWindow: parseInt(process.env.MCP_RATE_LIMIT_WINDOW) || 900000, // 15 min
-      rateLimitMax: parseInt(process.env.MCP_RATE_LIMIT) || 100,
-      maxConnections: parseInt(process.env.MCP_MAX_CONNECTIONS) || 1000,
+      rateLimitWindow: parseInt(process.env.MCP_RATE_LIMIT_WINDOW || '900000'), // 15 min
+      rateLimitMax: parseInt(process.env.MCP_RATE_LIMIT || '100'),
+      maxConnections: parseInt(process.env.MCP_MAX_CONNECTIONS || '1000'),
       
       // Supabase
-      supabaseUrl: process.env.ONASIS_SUPABASE_URL,
-      supabaseKey: process.env.ONASIS_SUPABASE_SERVICE_KEY,
+      supabaseUrl: process.env.ONASIS_SUPABASE_URL || process.env.SUPABASE_URL || '',
+      supabaseKey: process.env.ONASIS_SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_KEY || '',
       supabaseSSLCert: process.env.SUPABASE_SSL_CERT_PATH
     };
 
