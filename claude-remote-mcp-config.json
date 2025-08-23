@@ -1,0 +1,48 @@
+{
+  "mcpServers": {
+    "lanonasis-remote-mcp": {
+      "command": "node",
+      "args": [
+        "/Users/seyederick/DevOps/_project_folders/onasis-mcp-standalone/src/unified-mcp-server.js",
+        "--stdio"
+      ],
+      "env": {
+        "ONASIS_CORE_URL": "https://api.lanonasis.com",
+        "MCP_MODE": "remote",
+        "AUTH_MODE": "api_key",
+        "NODE_ENV": "production",
+        "API_KEY": "your_api_key_here"
+      },
+      "description": "Lanonasis Remote MCP Server - Secure routing through Onasis-CORE API",
+      "capabilities": {
+        "memory": true,
+        "apiKeys": true,
+        "projects": true,
+        "organizations": true,
+        "configuration": true,
+        "health": true,
+        "authentication": true
+      },
+      "toolCategories": [
+        "Memory Management (6 tools): create, search, get, update, delete, list memories",
+        "API Key Management (4 tools): create, list, rotate, delete API keys", 
+        "Project Management (2 tools): create, list projects",
+        "Organization Management (1 tool): get organization info",
+        "Authentication & Health (2 tools): auth status, health status",
+        "Configuration Management (2 tools): get/set configuration"
+      ],
+      "security": {
+        "authentication": "required",
+        "routing": "via-onasis-core",
+        "rls_enforcement": "enabled",
+        "vendor_isolation": "enabled"
+      },
+      "routing": {
+        "base_url": "https://api.lanonasis.com",
+        "memory_endpoint": "/api/v1/memory",
+        "auth_endpoint": "/auth/verify",
+        "health_endpoint": "/health"
+      }
+    }
+  }
+}
