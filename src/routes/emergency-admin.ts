@@ -18,7 +18,7 @@
 import { Router } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
-import bcrypt from 'bcrypt';
+import bcryptjs from 'bcryptjs';
 
 const router = Router();
 
@@ -80,7 +80,7 @@ router.post('/emergency/bootstrap-admin', async (req, res) => {
     } else {
       // Create user if doesn't exist
       const temporaryPassword = crypto.randomBytes(16).toString('hex');
-      const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+      const hashedPassword = await bcryptjs.hash(temporaryPassword, 10);
 
       const { data: newUser, error: userError } = await supabase
         .from('users')
