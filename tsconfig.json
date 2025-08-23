@@ -33,13 +33,14 @@
     "types": ["node", "jest"]
   },
   "include": [
-    "src/**/*",
-    "scripts/**/*"
+    "src/**/*.ts"
   ],
   "exclude": [
     "node_modules",
     "dist",
     "logs",
+    "scripts/**/*",
+    "src/netlify/**/*",
     "**/*.test.ts",
     "**/*.spec.ts"
   ],
