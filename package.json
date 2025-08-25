@@ -24,7 +24,7 @@
     "deploy:test": "./scripts/test-deployment.sh",
     "health": "curl -s https://mcp.lanonasis.com/health | jq",
     "logs": "pm2 logs lanonasis-mcp-server",
-    "studio": "npm run start:http"
+    "studio": "bun run start:http"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.4.0",
