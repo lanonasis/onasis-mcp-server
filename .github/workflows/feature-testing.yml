@@ -2,7 +2,7 @@ name: Feature Branch Testing
 
 on:
   push:
-    branches: [ 'feature/*', 'develop', 'staging' ]
+    branches: [ 'feature/*', 'develop', 'staging', 'main' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
