@@ -69,7 +69,7 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
   const { userId, organizationId, plan } = user;
 
   // Check plan limits
-  const memoryCount = await memoryService.getMemoryCount(organizationId);
+  const memoryCount = await memoryService.getMemoryCount(organizationId, user.apiKey || '');
   const planLimits = {
     free: 100,
     pro: 10000,
@@ -91,7 +91,7 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
     ...validatedData,
     user_id: userId,
     group_id: organizationId
-  });
+  }, user.apiKey || '');
 
   logMemoryOperation('create', userId, organizationId, {
     memoryId,
@@ -217,7 +217,7 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
     limit,
     sort,
     order
-  });
+  }, user.apiKey || '');
 
   res.json(result);
 }));
@@ -294,8 +294,9 @@ router.post('/search', asyncHandler(async (req: Request, res: Response) => {
 
   const results = await memoryService.searchMemories(
     validatedData.query,
+    filters,
     organizationId,
-    filters
+    user.apiKey
   );
 
   const searchTime = Date.now() - startTime;
@@ -360,7 +361,7 @@ router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
   }
   const { userId, organizationId, role } = user;
 
-  const memory = await memoryService.getMemoryById(id, organizationId);
+  const memory = await memoryService.getMemoryById(id, organizationId, user.apiKey || '');
   
   if (!memory) {
     res.status(404).json({
@@ -380,7 +381,7 @@ router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Update access tracking
-  await memoryService.updateAccessTracking(id);
+  await memoryService.updateAccessTracking(id, user.apiKey || '');
 
   logMemoryOperation('read', userId, organizationId, {
     memoryId: id,
@@ -464,7 +465,7 @@ router.put('/:id', asyncHandler(async (req: Request, res: Response) => {
     return;
   }
 
-  const updatedMemory = await memoryService.updateMemory(id, validatedData);
+  const updatedMemory = await memoryService.updateMemory(id, validatedData, user.apiKey || '');
 
   logMemoryOperation('update', userId, organizationId, {
     memoryId: id,
@@ -537,7 +538,7 @@ router.delete('/:id', asyncHandler(async (req: Request, res: Response) => {
     return;
   }
 
-  await memoryService.deleteMemory(id);
+  await memoryService.deleteMemory(id, user.apiKey || '');
 
   logMemoryOperation('delete', userId, organizationId, {
     memoryId: id,
@@ -575,7 +576,7 @@ router.get('/admin/stats', requireRole(['admin']), asyncHandler(async (req: Requ
   }
   const { organizationId } = user;
   
-  const stats = await memoryService.getMemoryStats(organizationId);
+  const stats = await memoryService.getMemoryStats(organizationId, user.apiKey);
   
   res.json(stats);
 }));
@@ -650,7 +651,7 @@ router.post('/bulk/delete',
       return;
     }
 
-    const result = await memoryService.bulkDeleteMemories(memory_ids, organizationId);
+    const result = await memoryService.bulkDeleteMemories(memory_ids, user.apiKey || '');
 
     logMemoryOperation('bulk_delete', userId, organizationId, {
       requested_count: memory_ids.length,
