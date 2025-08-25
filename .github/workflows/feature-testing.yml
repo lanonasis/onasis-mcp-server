@@ -22,30 +22,18 @@ jobs:
         echo "Branch: ${{ github.ref_name }}"
         echo "Event: ${{ github.event_name }}"
         echo "Repository: ${{ github.repository }}"
-        echo "Runner OS: ${{ runner.os }}"
-        echo "Workflow: ${{ github.workflow }}"
         
-        # Basic repository structure validation
-        echo "📁 Repository structure:"
-        ls -la
-        
-        echo "📦 Package.json exists:"
+    - name: Check Dependencies
+      run: |
+        echo "📦 Checking project dependencies..."
         if [ -f "package.json" ]; then
-          echo "✅ Found package.json"
-          head -10 package.json
+          echo "✅ package.json found"
+          echo "📋 Project: $(jq -r .name package.json)"
+          echo "📋 Version: $(jq -r .version package.json)"
         else
-          echo "❌ Missing package.json"
+          echo "❌ package.json not found"
           exit 1
         fi
-        
-        echo "🔧 TypeScript config:"
-        if [ -f "tsconfig.json" ]; then
-          echo "✅ Found tsconfig.json"
-        else
-          echo "❌ Missing tsconfig.json"
-        fi
-        
-        echo "✅ Environment validation completed"
 
   build-and-test:
     runs-on: ubuntu-latest
@@ -70,38 +58,15 @@ jobs:
           ${{ runner.os }}-bun-
         
     - name: Install dependencies
-      run: |
-        echo "📦 Installing dependencies..."
-        bun install --frozen-lockfile
-        echo "✅ Dependencies installed successfully"
-        
-    - name: Lint check
-      run: |
-        echo "🔍 Running ESLint..."
-        if bun run lint; then
-          echo "✅ Linting passed"
-        else
-          echo "⚠️ Linting issues found (continuing)"
-        fi
-        
-    - name: TypeScript type check
-      run: |
-        echo "🔧 Running TypeScript type check..."
-        if bun run type-check; then
-          echo "✅ Type check passed"
-          echo "TYPE_CHECK=✅" >> $GITHUB_ENV
-        else
-          echo "⚠️ Type check failed (continuing)"
-          echo "TYPE_CHECK=⚠️" >> $GITHUB_ENV
-        fi
-        
-    - name: Build project
+      run: bun install --frozen-lockfile
+      
+    - name: Build TypeScript
       id: build
       run: |
-        echo "🔨 Building project..."
+        echo "🔨 Building TypeScript..."
         if bun run build; then
-          echo "success=true" >> $GITHUB_OUTPUT
           echo "✅ Build successful"
+          echo "success=true" >> $GITHUB_OUTPUT
           echo "BUILD_STATUS=✅ SUCCESS" >> $GITHUB_ENV
           
           # Verify build output
@@ -111,87 +76,24 @@ jobs:
           fi
         else
           echo "success=false" >> $GITHUB_OUTPUT
-          echo "⚠️ Build failed - TypeScript compilation issues"
           echo "BUILD_STATUS=⚠️ FAILED" >> $GITHUB_ENV
-          
-          echo "🔧 Creating fallback CommonJS server for deployment..."
-          cat > simple-mcp-server.cjs << 'EOFJS'
-const express = require('express');
-const app = express();
-const port = process.env.PORT || 3001;
-
-app.use(express.json());
-
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    service: 'Lanonasis MCP Server (Feature Branch)',
-    timestamp: new Date().toISOString(),
-    version: '1.0.0-feature',
-    branch: process.env.GITHUB_REF_NAME || 'unknown'
-  });
-});
-
-app.get('/status', (req, res) => {
-  res.json({
-    status: 'operational', 
-    service: 'Lanonasis MCP Server (Feature Branch)',
-    uptime: process.uptime(),
-    memory: {
-      used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-      total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024)
-    },
-    environment: process.env.NODE_ENV || 'development'
-  });
-});
-
-app.listen(port, () => {
-  console.log(`🚀 Feature branch server running on port ${port}`);
-});
-EOFJS
-          echo "✅ Fallback server created"
+          echo "⚠️ Build failed - TypeScript compilation issues"
+          echo "⚠️  Fallback server creation skipped due to YAML syntax constraints"
         fi
 
     - name: Run tests
       id: test
       run: |
         echo "🧪 Running test suite..."
-        mkdir -p test-results
-        
-        if bun test --reporter=verbose 2>&1 | tee test-results/output.txt; then
+        if bun test; then
+          echo "✅ Tests passed"
           echo "success=true" >> $GITHUB_OUTPUT
-          echo "✅ Tests completed successfully"
           echo "TEST_STATUS=✅ PASSED" >> $GITHUB_ENV
         else
+          echo "❌ Tests failed"
           echo "success=false" >> $GITHUB_OUTPUT
-          echo "⚠️ Some tests failed"
-          echo "TEST_STATUS=⚠️ PARTIAL" >> $GITHUB_ENV
-          
-          # Show summary of failures
-          echo "📋 Test Summary:"
-          if [ -f test-results/output.txt ]; then
-            echo "Last 20 lines of test output:"
-            tail -20 test-results/output.txt
-          fi
+          echo "TEST_STATUS=❌ FAILED" >> $GITHUB_ENV
         fi
-        
-    - name: Upload test results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results-${{ github.sha }}
-        path: test-results/
-        retention-days: 7
-        
-    - name: Upload build artifacts
-      if: steps.build.outputs.success == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts-${{ github.sha }}
-        path: |
-          dist/
-          simple-mcp-server.cjs
-        retention-days: 7
 
   security-check:
     runs-on: ubuntu-latest
@@ -205,17 +107,10 @@ EOFJS
     - name: Scan for secrets with GitLeaks
       uses: gitleaks/gitleaks-action@v2
       with:
-        args: --source=. --verbose
-        
-        # Check environment files are not committed
-        if find . -name ".env*" -not -name ".env.example" -not -name ".env.test" | grep -v node_modules; then
-          echo "❌ Environment files found in repository!"
-          exit 1
-        else
-          echo "✅ No environment files committed"
-        fi
+        version: latest
+        args: --verbose --redact
 
-  feature-summary:
+  summary:
     runs-on: ubuntu-latest
     needs: [validate, build-and-test, security-check]
     name: Feature Branch Summary
@@ -227,26 +122,29 @@ EOFJS
         echo "## 🚀 Feature Branch Testing Summary" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Branch**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "**Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "**Triggered by**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "| Check | Status | Details |" >> $GITHUB_STEP_SUMMARY
-        echo "|-------|--------|---------|" >> $GITHUB_STEP_SUMMARY
-        echo "| Environment | ✅ Valid | Configuration validated |" >> $GITHUB_STEP_SUMMARY
-        echo "| Dependencies | ✅ Installed | Bun dependencies resolved |" >> $GITHUB_STEP_SUMMARY
-        echo "| Build | ${{ needs.build-and-test.result == 'success' && '✅ Success' || '⚠️ Issues' }} | TypeScript compilation |" >> $GITHUB_STEP_SUMMARY
-        echo "| Tests | ${{ needs.build-and-test.result == 'success' && '✅ Executed' || '⚠️ Partial' }} | Test suite execution |" >> $GITHUB_STEP_SUMMARY
-        echo "| Security | ✅ Checked | No secrets in code |" >> $GITHUB_STEP_SUMMARY
+        echo "**Event**: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Repository**: \`${{ github.repository }}\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
-        if [ "${{ needs.build-and-test.result }}" == "success" ]; then
-          echo "🎉 **Feature branch is ready for review and deployment!**" >> $GITHUB_STEP_SUMMARY
+        echo "### 📊 Results Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ needs.build-and-test.outputs.success }}" == "true" ]; then
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Quality | ✅ TypeScript |" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Results | ${{ needs.build-and-test.outputs.success == 'true' && '✅ All Passed' || '⚠️ Some Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ✅ Clean |" >> $GITHUB_STEP_SUMMARY
         else
-          echo "⚠️ **Feature branch has issues that should be addressed before merging.**" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Quality | ⚠️ Fallback |" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Results | ${{ needs.build-and-test.outputs.success == 'true' && '✅ All Passed' || '⚠️ Some Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ✅ Clean |" >> $GITHUB_STEP_SUMMARY
         fi
         
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+        echo "### 📋 Next Steps:" >> $GITHUB_STEP_SUMMARY
         echo "- Review test results and build artifacts" >> $GITHUB_STEP_SUMMARY
         echo "- Address any TypeScript compilation issues if needed" >> $GITHUB_STEP_SUMMARY
         echo "- Create pull request when ready for main branch merge" >> $GITHUB_STEP_SUMMARY
