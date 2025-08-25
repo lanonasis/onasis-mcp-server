@@ -10,6 +10,7 @@ export interface UnifiedUser extends JWTPayload {
   email?: string;
   user_metadata?: Record<string, unknown>;
   app_metadata?: Record<string, unknown>;
+  apiKey?: string; // Store original API key for passthrough
 }
 
 // Extend Express Request type to include user
@@ -38,9 +39,22 @@ export const authMiddleware = async (
     }
     // Check for API key
     else if (apiKey) {
-      // For API key authentication, we'll implement a separate flow
-      // For now, treat API key as a special token
-      token = apiKey;
+      // For API key authentication, pass through to lanonasis-maas for validation
+      // Create a minimal user object that includes the API key for passthrough
+      req.user = {
+        userId: 'api-user', // Placeholder - will be resolved by lanonasis-maas
+        organizationId: 'api-org', // Placeholder - will be resolved by lanonasis-maas  
+        role: 'user',
+        plan: 'pro',
+        apiKey: apiKey
+      };
+      
+      logger.debug('API key authentication', { 
+        apiKeyPrefix: apiKey.substring(0, 20) + '...' 
+      });
+      
+      next();
+      return;
     }
 
     if (!token) {

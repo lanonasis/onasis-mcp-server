@@ -1,6 +1,4 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
-
+import fetch from 'node-fetch';
 import { config } from '@/config/environment';
 import { logger, logPerformance } from '@/utils/logger';
 import { 
@@ -37,80 +35,87 @@ export interface ListMemoryFilters extends Record<string, unknown> {
   topic_id?: string | null;
 }
 
+/**
+ * MemoryService that routes through Onasis-Core API
+ * This replaces direct Supabase calls with HTTP requests to onasis-core
+ */
 export class MemoryService {
-  private supabase: SupabaseClient;
-  private openai: OpenAI;
+  private readonly ONASIS_CORE_BASE_URL: string;
 
   constructor() {
-    this.supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY);
-    this.openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
+    // Route through lanonasis-maas middleware to onasis-core
+    this.ONASIS_CORE_BASE_URL = process.env.LANONASIS_MAAS_URL || 'https://lanonasis-maas.netlify.app/.netlify/functions/api';
   }
 
   /**
-   * Create vector embedding for text
+   * Make authenticated HTTP request to onasis-core
    */
-  private async createEmbedding(text: string): Promise<number[]> {
-    const startTime = Date.now();
+  private async makeRequest(endpoint: string, options: {
+    method?: string;
+    body?: object;
+    apiKey?: string;
+  } = {}): Promise<any> {
+    const { method = 'GET', body, apiKey } = options;
     
+    if (!apiKey) {
+      throw new InternalServerError('API key is required for onasis-core requests');
+    }
+    
+    const url = `${this.ONASIS_CORE_BASE_URL}${endpoint}`;
+    const fetchOptions: any = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'x-project-scope': 'maas'
+      }
+    };
+
+    if (body && method !== 'GET') {
+      fetchOptions.body = JSON.stringify(body);
+    }
+
     try {
-      const response = await this.openai.embeddings.create({
-        model: 'text-embedding-ada-002',
-        input: text.substring(0, 8000) // Limit input length
-      });
+      logger.info('Making request to onasis-core', { url, method });
+      const response = await fetch(url, fetchOptions);
+      const data = await response.json();
 
-      logPerformance('embedding_creation', Date.now() - startTime, {
-        text_length: text.length,
-        model: 'text-embedding-ada-002'
-      });
+      if (!response.ok) {
+        logger.error('Onasis-core API error', { 
+          status: response.status, 
+          statusText: response.statusText, 
+          data,
+          url
+        });
+        throw new InternalServerError(`API request failed: ${data.error || response.statusText}`);
+      }
 
-      return response.data[0]?.embedding || [];
+      return data;
     } catch (error) {
-      logger.error('Failed to create embedding', { error, text_length: text.length });
-      throw new InternalServerError('Failed to create text embedding');
+      logger.error('Failed to make request to onasis-core', { error, url, method });
+      throw new InternalServerError('Failed to connect to onasis-core service');
     }
   }
 
   /**
-   * Create a new memory entry
+   * Create a new memory entry via onasis-core
    */
-  async createMemory(id: string, data: CreateMemoryRequest & { user_id: string; group_id: string }): Promise<MemoryEntry> {
+  async createMemory(id: string, data: CreateMemoryRequest & { user_id: string; group_id: string }, apiKey: string): Promise<MemoryEntry> {
     const startTime = Date.now();
 
     try {
-      // Create embedding for the content
-      const embedding = await this.createEmbedding(data.content);
-
-      const memoryData = {
-        id,
-        title: data.title,
-        content: data.content,
-        memory_type: data.memory_type,
-        tags: data.tags || [],
-        topic_id: data.topic_id || null,
-        user_id: data.user_id,
-        group_id: data.group_id,
-        embedding: JSON.stringify(embedding) as unknown as number[], // Supabase expects string format
-        metadata: data.metadata || {} as Record<string, unknown>,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        access_count: 0
-      };
-
-      const { data: memory, error } = await this.supabase
-        .from('memory_entries')
-        .insert(memoryData)
-        .select()
-        .single();
-
-      if (error) {
-        logger.error('Failed to create memory', { error, memory_data: memoryData });
-        throw new InternalServerError('Failed to create memory entry');
-      }
-
-      // Log analytics
-      await this.logAnalytics(data.group_id, data.user_id, 'memory_created', 'memory', id, {
-        memory_type: data.memory_type,
-        content_length: data.content.length
+      const result = await this.makeRequest('/api/v1/memory', {
+        method: 'POST',
+        body: {
+          id,
+          title: data.title,
+          content: data.content,
+          memory_type: data.memory_type,
+          tags: data.tags || [],
+          topic_id: data.topic_id || null,
+          metadata: data.metadata || {}
+        },
+        apiKey
       });
 
       logPerformance('memory_creation', Date.now() - startTime, {
@@ -118,406 +123,257 @@ export class MemoryService {
         content_length: data.content.length
       });
 
-      return memory;
+      return result;
     } catch (error) {
-      if (error instanceof InternalServerError) throw error;
-      logger.error('Unexpected error creating memory', { error });
-      throw new InternalServerError('Failed to create memory entry');
+      logger.error('Failed to create memory via onasis-core', { error, id });
+      throw error;
     }
   }
 
   /**
-   * Get memory by ID
+   * Get memory by ID via onasis-core
    */
-  async getMemoryById(id: string, organizationId: string): Promise<MemoryEntry | null> {
-    const { data: memory, error } = await this.supabase
-      .from('memory_entries')
-      .select('*')
-      .eq('id', id)
-      .eq('organization_id', organizationId)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') { // Not found
+  async getMemoryById(id: string, organizationId: string, apiKey: string): Promise<MemoryEntry | null> {
+    try {
+      const result = await this.makeRequest(`/api/v1/memory/${id}`, { apiKey });
+      return result;
+    } catch (error: any) {
+      if (error.message?.includes('404') || error.message?.includes('not found')) {
         return null;
       }
-      logger.error('Failed to get memory by ID', { error, id, organizationId });
-      throw new InternalServerError('Failed to retrieve memory');
+      logger.error('Failed to get memory by ID via onasis-core', { error, id, organizationId });
+      throw error;
     }
-
-    return memory;
   }
 
   /**
-   * Update memory entry
+   * Update memory entry via onasis-core
    */
-  async updateMemory(id: string, data: UpdateMemoryRequest): Promise<MemoryEntry> {
+  async updateMemory(id: string, data: UpdateMemoryRequest, apiKey: string): Promise<MemoryEntry> {
     const startTime = Date.now();
 
     try {
-      const updateData: Partial<MemoryEntry> & { updated_at: string; embedding?: string } = {
-        updated_at: new Date().toISOString()
-      };
+      const updateData: any = {};
 
-      // Only update fields that are provided
+      // Only include fields that are provided
       if (data.title !== undefined) updateData.title = data.title;
+      if (data.content !== undefined) updateData.content = data.content;
       if (data.memory_type !== undefined) updateData.memory_type = data.memory_type;
       if (data.tags !== undefined) updateData.tags = data.tags;
       if (data.topic_id !== undefined) updateData.topic_id = data.topic_id;
       if (data.metadata !== undefined) updateData.metadata = data.metadata;
 
-      // If content is updated, create new embedding
-      if (data.content !== undefined) {
-        updateData.content = data.content;
-        updateData.embedding = JSON.stringify(await this.createEmbedding(data.content));
-      }
-
-      const { data: memory, error } = await this.supabase
-        .from('memory_entries')
-        .update(updateData)
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) {
-        logger.error('Failed to update memory', { error, id, updateData });
-        throw new InternalServerError('Failed to update memory entry');
-      }
+      const result = await this.makeRequest(`/api/v1/memory/${id}`, {
+        method: 'PUT',
+        body: updateData,
+        apiKey
+      });
 
       logPerformance('memory_update', Date.now() - startTime, {
         memory_id: id,
         updated_fields: Object.keys(updateData)
       });
 
-      return memory;
+      return result;
     } catch (error) {
-      if (error instanceof InternalServerError) throw error;
-      logger.error('Unexpected error updating memory', { error });
-      throw new InternalServerError('Failed to update memory entry');
+      logger.error('Failed to update memory via onasis-core', { error, id });
+      throw error;
     }
   }
 
   /**
-   * Delete memory entry
+   * Delete memory entry via onasis-core
    */
-  async deleteMemory(id: string): Promise<void> {
-    const { error } = await this.supabase
-      .from('memory_entries')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      logger.error('Failed to delete memory', { error, id });
-      throw new InternalServerError('Failed to delete memory entry');
+  async deleteMemory(id: string, apiKey: string): Promise<void> {
+    try {
+      await this.makeRequest(`/api/v1/memory/${id}`, {
+        method: 'DELETE',
+        apiKey
+      });
+    } catch (error) {
+      logger.error('Failed to delete memory via onasis-core', { error, id });
+      throw error;
     }
   }
 
   /**
-   * Search memories using vector similarity
+   * List memories with filters via onasis-core
+   */
+  async listMemories(
+    filters: ListMemoryFilters = {},
+    options: ListOptions = { page: 1, limit: 20, sort: 'created_at', order: 'desc' },
+    apiKey: string
+  ): Promise<{ memories: MemoryEntry[]; total: number }> {
+    try {
+      const queryParams = new URLSearchParams();
+      
+      // Add filters as query parameters
+      if (filters.memory_type) queryParams.append('memory_type', filters.memory_type);
+      if (filters.tags?.length) queryParams.append('tags', filters.tags.join(','));
+      if (filters.topic_id) queryParams.append('topic_id', filters.topic_id);
+      
+      // Add pagination options
+      queryParams.append('page', options.page.toString());
+      queryParams.append('limit', options.limit.toString());
+      queryParams.append('sort', options.sort);
+      queryParams.append('order', options.order);
+
+      const endpoint = `/api/v1/memory?${queryParams.toString()}`;
+      const result = await this.makeRequest(endpoint, { apiKey });
+
+      return {
+        memories: result.data || result.memories || [],
+        total: result.total || result.count || 0
+      };
+    } catch (error) {
+      logger.error('Failed to list memories via onasis-core', { error, filters, options });
+      throw error;
+    }
+  }
+
+  /**
+   * Search memories with semantic search via onasis-core
    */
   async searchMemories(
-    query: string, 
-    organizationId: string, 
-    filters: SearchFilters = {}
+    query: string,
+    filters: SearchFilters = {},
+    organizationId?: string,
+    apiKey?: string
   ): Promise<MemorySearchResult[]> {
     const startTime = Date.now();
 
     try {
-      // Create embedding for the search query
-      const queryEmbedding = await this.createEmbedding(query);
+      const searchData: any = {
+        query,
+        limit: filters.limit || 10,
+        threshold: filters.threshold || 0.7
+      };
 
-      // Call the PostgreSQL function for vector search
-      const { data: results, error } = await this.supabase
-        .rpc('match_memories', {
-          query_embedding: JSON.stringify(queryEmbedding),
-          match_threshold: filters.threshold || 0.7,
-          match_count: filters.limit || 20,
-          organization_id_param: organizationId,
-          memory_types_param: filters.memory_types || null,
-          tags_param: filters.tags || null,
-          topic_id_param: filters.topic_id || null,
-          user_id_param: filters.user_id || null
-        });
+      // Add optional filters
+      if (filters.memory_types?.length) searchData.memory_types = filters.memory_types;
+      if (filters.tags?.length) searchData.tags = filters.tags;
+      if (filters.topic_id) searchData.topic_id = filters.topic_id;
+      if (organizationId) searchData.organization_id = organizationId;
 
-      if (error) {
-        logger.error('Failed to search memories', { error, query, organizationId, filters });
-        throw new InternalServerError('Failed to search memories');
-      }
+      const result = await this.makeRequest('/api/v1/memory/search', {
+        method: 'POST',
+        body: searchData,
+        apiKey
+      });
 
       logPerformance('memory_search', Date.now() - startTime, {
         query_length: query.length,
-        results_count: results?.length || 0,
-        filters
+        results_count: result.length || result.data?.length || 0
       });
 
-      return results || [];
+      return result.data || result || [];
     } catch (error) {
-      if (error instanceof InternalServerError) throw error;
-      logger.error('Unexpected error searching memories', { error });
-      throw new InternalServerError('Failed to search memories');
+      logger.error('Failed to search memories via onasis-core', { error, query, filters });
+      throw error;
     }
   }
 
   /**
-   * List memories with pagination and filtering
+   * Get memory statistics via onasis-core
    */
-  async listMemories(filters: ListMemoryFilters, options: ListOptions): Promise<{
-    memories: MemoryEntry[];
-    pagination: {
-      page: number;
-      limit: number;
-      total: number;
-      pages: number;
-    };
-  }> {
-    const startTime = Date.now();
-
+  async getMemoryStats(organizationId?: string, apiKey?: string): Promise<MemoryStats> {
     try {
-      // Build query
-      let query = this.supabase.from('memory_entries').select('*', { count: 'exact' });
-
-      // Apply filters
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
-          if (key === 'tags' && Array.isArray(value)) {
-            query = query.overlaps('tags', value);
-          } else {
-            query = query.eq(key, value);
-          }
-        }
-      });
-
-      // Apply sorting
-      const validSortFields = ['created_at', 'updated_at', 'last_accessed', 'title', 'access_count'];
-      const sortField = validSortFields.includes(options.sort) ? options.sort : 'created_at';
-      const sortOrder = options.order === 'asc' ? { ascending: true } : { ascending: false };
-
-      query = query.order(sortField, sortOrder);
-
-      // Apply pagination
-      const offset = (options.page - 1) * options.limit;
-      query = query.range(offset, offset + options.limit - 1);
-
-      const { data: memories, count, error } = await query;
-
-      if (error) {
-        logger.error('Failed to list memories', { error, filters, options });
-        throw new InternalServerError('Failed to list memories');
-      }
-
-      const total = count || 0;
-      const pages = Math.ceil(total / options.limit);
-
-      logPerformance('memory_list', Date.now() - startTime, {
-        filters,
-        options,
-        results_count: memories?.length || 0,
-        total
-      });
-
-      return {
-        memories: memories || [],
-        pagination: {
-          page: options.page,
-          limit: options.limit,
-          total,
-          pages
-        }
-      };
-    } catch (error) {
-      if (error instanceof InternalServerError) throw error;
-      logger.error('Unexpected error listing memories', { error });
-      throw new InternalServerError('Failed to list memories');
-    }
-  }
-
-  /**
-   * Update access tracking
-   */
-  async updateAccessTracking(id: string): Promise<void> {
-    const { error } = await this.supabase
-      .rpc('update_memory_access', { memory_id_param: id });
-
-    if (error) {
-      logger.warn('Failed to update access tracking', { error, id });
-      // Don't throw error as this is not critical
-    }
-  }
-
-  /**
-   * Get memory count for organization
-   */
-  async getMemoryCount(organizationId: string): Promise<number> {
-    const { count, error } = await this.supabase
-      .from('memory_entries')
-      .select('*', { count: 'exact', head: true })
-      .eq('organization_id', organizationId);
-
-    if (error) {
-      logger.error('Failed to get memory count', { error, organizationId });
-      throw new InternalServerError('Failed to get memory count');
-    }
-
-    return count || 0;
-  }
-
-  /**
-   * Get memory statistics
-   */
-  async getMemoryStats(organizationId: string): Promise<MemoryStats> {
-    const startTime = Date.now();
-
-    try {
-      // Get total count and breakdown by type
-      const { data: typeBreakdown, error: typeError } = await this.supabase
-        .from('memory_entries')
-        .select('memory_type')
-        .eq('organization_id', organizationId);
-
-      if (typeError) {
-        throw new InternalServerError('Failed to get memory type breakdown');
-      }
-
-      const memoriesByType: Record<MemoryType, number> = {
-        context: 0,
-        project: 0,
-        knowledge: 0,
-        reference: 0,
-        personal: 0,
-        workflow: 0
-      };
-
-      typeBreakdown?.forEach((item: { memory_type: string }) => {
-        memoriesByType[item.memory_type as MemoryType]++;
-      });
-
-      // Get size and access stats
-      const { data: sizeStats, error: sizeError } = await this.supabase
-        .from('memory_entries')
-        .select('content, access_count')
-        .eq('organization_id', organizationId);
-
-      if (sizeError) {
-        throw new InternalServerError('Failed to get memory size stats');
-      }
-
-      const totalSizeBytes = sizeStats?.reduce((total: number, item: { content: string }) => 
-        total + new Blob([item.content]).size, 0) || 0;
+      const endpoint = organizationId 
+        ? `/api/v1/memory/stats?organization_id=${organizationId}`
+        : '/api/v1/memory/stats';
       
-      const avgAccessCount = sizeStats?.length 
-        ? sizeStats.reduce((total: number, item: { access_count: number }) => total + item.access_count, 0) / sizeStats.length
-        : 0;
-
-      // Get most accessed memory
-      const { data: mostAccessed, error: accessError } = await this.supabase
-        .from('memory_entries')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .order('access_count', { ascending: false })
-        .limit(1)
-        .single();
-
-      // Get recent memories
-      const { data: recentMemories } = await this.supabase
-        .from('memory_entries')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      logPerformance('memory_stats', Date.now() - startTime, {
-        organization_id: organizationId,
-        total_memories: typeBreakdown?.length || 0
-      });
-
-      return {
-        total_memories: typeBreakdown?.length || 0,
-        memories_by_type: memoriesByType,
-        total_size_bytes: totalSizeBytes,
-        avg_access_count: Math.round(avgAccessCount * 100) / 100,
-        most_accessed_memory: (!accessError && mostAccessed) ? mostAccessed : undefined,
-        recent_memories: recentMemories || []
-      };
+      const result = await this.makeRequest(endpoint, { apiKey });
+      return result;
     } catch (error) {
-      if (error instanceof InternalServerError) throw error;
-      logger.error('Unexpected error getting memory stats', { error });
-      throw new InternalServerError('Failed to get memory statistics');
+      logger.error('Failed to get memory stats via onasis-core', { error, organizationId });
+      throw error;
     }
   }
 
   /**
-   * Bulk delete memories
+   * Bulk delete memories via onasis-core
    */
-  async bulkDeleteMemories(memoryIds: string[], organizationId: string): Promise<{
-    deleted_count: number;
-    failed_ids: string[];
-  }> {
-    const startTime = Date.now();
-    const failedIds: string[] = [];
-    let deletedCount = 0;
-
+  async bulkDeleteMemories(ids: string[], apiKey: string): Promise<{ deleted: number }> {
     try {
-      // Process in batches to avoid overwhelming the database
-      const batchSize = 50;
-      for (let i = 0; i < memoryIds.length; i += batchSize) {
-        const batch = memoryIds.slice(i, i + batchSize);
-        
-        const { error } = await this.supabase
-          .from('memory_entries')
-          .delete()
-          .in('id', batch)
-          .eq('organization_id', organizationId);
-
-        if (error) {
-          logger.warn('Batch delete failed', { error, batch });
-          failedIds.push(...batch);
-        } else {
-          deletedCount += batch.length;
-        }
-      }
-
-      logPerformance('bulk_delete', Date.now() - startTime, {
-        requested_count: memoryIds.length,
-        deleted_count: deletedCount,
-        failed_count: failedIds.length
+      const result = await this.makeRequest('/api/v1/memory/bulk/delete', {
+        method: 'POST',
+        body: { ids },
+        apiKey
       });
 
-      return {
-        deleted_count: deletedCount,
-        failed_ids: failedIds
-      };
+      return result;
     } catch (error) {
-      logger.error('Unexpected error in bulk delete', { error });
-      throw new InternalServerError('Failed to bulk delete memories');
+      logger.error('Failed to bulk delete memories via onasis-core', { error, ids });
+      throw error;
     }
   }
 
   /**
-   * Log analytics event
+   * Update memory access tracking via onasis-core
+   */
+  async updateMemoryAccess(id: string, apiKey: string): Promise<void> {
+    try {
+      await this.makeRequest(`/api/v1/memory/${id}/access`, {
+        method: 'POST',
+        apiKey
+      });
+    } catch (error) {
+      logger.error('Failed to update memory access via onasis-core', { error, id });
+      // Don't throw error for access tracking failures
+    }
+  }
+
+  /**
+   * Get memory count for organization via onasis-core
+   */
+  async getMemoryCount(organizationId: string, apiKey: string): Promise<number> {
+    try {
+      const result = await this.makeRequest(`/api/v1/memory/count?organization_id=${organizationId}`, { apiKey });
+      return result.count || 0;
+    } catch (error) {
+      logger.error('Failed to get memory count via onasis-core', { error, organizationId });
+      return 0;
+    }
+  }
+
+  /**
+   * Alias for updateMemoryAccess for backward compatibility
+   */
+  async updateAccessTracking(id: string, apiKey: string): Promise<void> {
+    return this.updateMemoryAccess(id, apiKey);
+  }
+
+  /**
+   * Legacy analytics logging method - now routes through onasis-core
    */
   private async logAnalytics(
-    organizationId: string,
-    userId: string,
-    action: string,
-    resourceType: string,
-    resourceId: string,
-    metadata: Record<string, unknown> = {}
+    groupId: string, 
+    userId: string, 
+    action: string, 
+    resourceType: string, 
+    resourceId: string, 
+    metadata: Record<string, any>,
+    apiKey: string
   ): Promise<void> {
     try {
-      await this.supabase
-        .from('usage_analytics')
-        .insert({
-          organization_id: organizationId,
+      await this.makeRequest('/api/v1/analytics', {
+        method: 'POST',
+        body: {
+          group_id: groupId,
           user_id: userId,
           action,
           resource_type: resourceType,
           resource_id: resourceId,
-          metadata,
-          timestamp: new Date().toISOString()
-        });
+          metadata
+        },
+        apiKey
+      });
     } catch (error) {
-      logger.warn('Failed to log analytics', { error });
-      // Don't throw as analytics is not critical
+      logger.warn('Failed to log analytics via onasis-core', { error, action, resourceType, resourceId });
+      // Don't throw error for analytics failures
     }
   }
 }
+
+// Export the service instance
+export const memoryService = new MemoryService();
