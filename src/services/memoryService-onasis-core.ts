@@ -43,8 +43,8 @@ export class MemoryService {
   private readonly ONASIS_CORE_BASE_URL: string;
 
   constructor() {
-    // Route through lanonasis-maas middleware to onasis-core
-    this.ONASIS_CORE_BASE_URL = process.env.LANONASIS_MAAS_URL || 'https://lanonasis-maas.netlify.app/.netlify/functions/api';
+    // Use onasis-core API endpoint instead of direct Supabase
+    this.ONASIS_CORE_BASE_URL = process.env.ONASIS_CORE_URL || 'https://api.lanonasis.com';
   }
 
   /**
@@ -321,26 +321,6 @@ export class MemoryService {
       logger.error('Failed to update memory access via onasis-core', { error, id });
       // Don't throw error for access tracking failures
     }
-  }
-
-  /**
-   * Get memory count for organization via onasis-core
-   */
-  async getMemoryCount(organizationId: string, apiKey: string): Promise<number> {
-    try {
-      const result = await this.makeRequest(`/api/v1/memory/count?organization_id=${organizationId}`, { apiKey });
-      return result.count || 0;
-    } catch (error) {
-      logger.error('Failed to get memory count via onasis-core', { error, organizationId });
-      return 0;
-    }
-  }
-
-  /**
-   * Alias for updateMemoryAccess for backward compatibility
-   */
-  async updateAccessTracking(id: string, apiKey: string): Promise<void> {
-    return this.updateMemoryAccess(id, apiKey);
   }
 
   /**

@@ -3,8 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { asyncHandler } from '@/middleware/errorHandler';
 import { requireRole, requirePlan } from '@/middleware/auth';
-import { MemoryService } from '@/services/memoryService-routed';
-import { ListMemoryFilters } from '@/services/onasisCoreClient';
+import { MemoryService, ListMemoryFilters } from '@/services/memoryService';
 import { 
   createMemorySchema, 
   updateMemorySchema, 
@@ -28,22 +27,7 @@ interface SearchMemoryFilters {
 import { logMemoryOperation } from '@/utils/logger';
 
 const router = Router();
-
-// Helper to create authenticated memory service for each request
-function createMemoryService(req: Request): MemoryService {
-  // Extract API key or JWT token from request
-  const authHeader = req.headers.authorization;
-  const apiKey = req.apiKey || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined);
-  
-  const memoryService = new MemoryService(apiKey);
-  
-  // If we have a JWT token instead of API key, set it
-  if (authHeader?.startsWith('Bearer ') && !req.apiKey) {
-    memoryService.setAuthToken(authHeader.slice(7));
-  }
-  
-  return memoryService;
-}
+const memoryService = new MemoryService();
 
 /**
  * @swagger
@@ -84,11 +68,8 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
   }
   const { userId, organizationId, plan } = user;
 
-  // Create authenticated memory service for this request
-  const memoryService = createMemoryService(req);
-  
   // Check plan limits
-  const memoryCount = await memoryService.getMemoryCount(organizationId);
+  const memoryCount = await memoryService.getMemoryCount(organizationId, user.apiKey || '');
   const planLimits = {
     free: 100,
     pro: 10000,
@@ -110,7 +91,7 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
     ...validatedData,
     user_id: userId,
     group_id: organizationId
-  });
+  }, user.apiKey || '');
 
   logMemoryOperation('create', userId, organizationId, {
     memoryId,
@@ -197,9 +178,6 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
  */
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const user = req.user;
-  
-  // Create authenticated memory service for this request
-  const memoryService = createMemoryService(req);
   if (!user || !user.organizationId) {
     res.status(401).json({
       error: 'Unauthorized',
@@ -239,7 +217,7 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
     limit,
     sort,
     order
-  });
+  }, user.apiKey || '');
 
   res.json(result);
 }));
@@ -281,9 +259,6 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
 router.post('/search', asyncHandler(async (req: Request, res: Response) => {
   const validatedData = searchMemorySchema.parse(req.body) as SearchMemoryRequest;
   const user = req.user;
-  
-  // Create authenticated memory service for this request
-  const memoryService = createMemoryService(req);
   if (!user || !user.userId || !user.organizationId) {
     res.status(401).json({
       error: 'Unauthorized',
@@ -319,8 +294,9 @@ router.post('/search', asyncHandler(async (req: Request, res: Response) => {
 
   const results = await memoryService.searchMemories(
     validatedData.query,
+    filters,
     organizationId,
-    filters
+    user.apiKey
   );
 
   const searchTime = Date.now() - startTime;
@@ -385,10 +361,7 @@ router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
   }
   const { userId, organizationId, role } = user;
 
-  // Create authenticated memory service for this request
-  const memoryService = createMemoryService(req);
-
-  const memory = await memoryService.getMemoryById(id, organizationId);
+  const memory = await memoryService.getMemoryById(id, organizationId, user.apiKey || '');
   
   if (!memory) {
     res.status(404).json({
@@ -408,7 +381,7 @@ router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Update access tracking
-  await memoryService.updateAccessTracking(id);
+  await memoryService.updateAccessTracking(id, user.apiKey || '');
 
   logMemoryOperation('read', userId, organizationId, {
     memoryId: id,
@@ -473,9 +446,6 @@ router.put('/:id', asyncHandler(async (req: Request, res: Response) => {
   }
   const { userId, organizationId, role } = user;
 
-  // Create authenticated memory service for this request
-  const memoryService = createMemoryService(req);
-
   const existingMemory = await memoryService.getMemoryById(id, organizationId);
   
   if (!existingMemory) {
@@ -495,7 +465,7 @@ router.put('/:id', asyncHandler(async (req: Request, res: Response) => {
     return;
   }
 
-  const updatedMemory = await memoryService.updateMemory(id, validatedData);
+  const updatedMemory = await memoryService.updateMemory(id, validatedData, user.apiKey || '');
 
   logMemoryOperation('update', userId, organizationId, {
     memoryId: id,
@@ -549,9 +519,6 @@ router.delete('/:id', asyncHandler(async (req: Request, res: Response) => {
   }
   const { userId, organizationId, role } = user;
 
-  // Create authenticated memory service for this request
-  const memoryService = createMemoryService(req);
-
   const existingMemory = await memoryService.getMemoryById(id, organizationId);
   
   if (!existingMemory) {
@@ -571,7 +538,7 @@ router.delete('/:id', asyncHandler(async (req: Request, res: Response) => {
     return;
   }
 
-  await memoryService.deleteMemory(id);
+  await memoryService.deleteMemory(id, user.apiKey || '');
 
   logMemoryOperation('delete', userId, organizationId, {
     memoryId: id,
@@ -609,10 +576,7 @@ router.get('/admin/stats', requireRole(['admin']), asyncHandler(async (req: Requ
   }
   const { organizationId } = user;
   
-  // Create authenticated memory service for this request
-  const memoryService = createMemoryService(req);
-  
-  const stats = await memoryService.getMemoryStats(organizationId);
+  const stats = await memoryService.getMemoryStats(organizationId, user.apiKey);
   
   res.json(stats);
 }));
@@ -687,10 +651,7 @@ router.post('/bulk/delete',
       return;
     }
 
-    // Create authenticated memory service for this request
-    const memoryService = createMemoryService(req);
-
-    const result = await memoryService.bulkDeleteMemories(memory_ids, organizationId);
+    const result = await memoryService.bulkDeleteMemories(memory_ids, user.apiKey || '');
 
     logMemoryOperation('bulk_delete', userId, organizationId, {
       requested_count: memory_ids.length,
