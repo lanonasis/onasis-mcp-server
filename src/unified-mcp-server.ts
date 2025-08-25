@@ -73,8 +73,25 @@ process.env.DEBUG = '';
 /**
  * Unified MCP Server supporting multiple protocols
  */
+interface LanonasisMCPServerConfig {
+  httpPort: number;
+  wsPort: number;
+  ssePort: number;
+  host: string;
+  enableHttp: boolean;
+  enableWebSocket: boolean;
+  enableSSE: boolean;
+  enableStdio: boolean;
+  rateLimitWindow: number;
+  rateLimitMax: number;
+  maxConnections: number;
+  supabaseUrl: string;
+  supabaseKey: string;
+  supabaseSSLCert?: string;
+}
+
 class LanonasisUnifiedMCPServer {
-  private config: any;
+  private config: LanonasisMCPServerConfig;
   private supabase: any;
   private memoryService: any;
   private currentAuthContext: any;

@@ -202,16 +202,10 @@ EOFJS
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Check for secrets in code
-      run: |
-        echo "🔒 Checking for potential secrets..."
-        
-        # Check for common secret patterns
-        if grep -r -i "password\|secret\|key\|token" --include="*.ts" --include="*.js" src/ || true; then
-          echo "⚠️ Found potential secrets in code - please review"
-        else
-          echo "✅ No obvious secrets found in source code"
-        fi
+    - name: Scan for secrets with GitLeaks
+      uses: gitleaks/gitleaks-action@v2
+      with:
+        args: --source=. --verbose
         
         # Check environment files are not committed
         if find . -name ".env*" -not -name ".env.example" -not -name ".env.test" | grep -v node_modules; then
