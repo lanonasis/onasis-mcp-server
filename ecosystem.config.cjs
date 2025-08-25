@@ -28,9 +28,9 @@ module.exports = {
         ENABLE_SSE: 'true',
         ENABLE_STDIO: 'false'
       },
-      error_file: '/var/log/pm2/lanonasis-mcp-error.log',
-      out_file: '/var/log/pm2/lanonasis-mcp-out.log',
-      log_file: '/var/log/pm2/lanonasis-mcp-combined.log',
+      error_file: 'logs/lanonasis-mcp-error.log',
+      out_file: 'logs/lanonasis-mcp-out.log',
+      log_file: 'logs/lanonasis-mcp-combined.log',
       time: true,
       merge_logs: true,
       
@@ -80,9 +80,9 @@ module.exports = {
         ENABLE_SSE: 'false',
         ENABLE_STDIO: 'true'
       },
-      error_file: '/var/log/pm2/lanonasis-mcp-stdio-error.log',
-      out_file: '/var/log/pm2/lanonasis-mcp-stdio-out.log',
-      log_file: '/var/log/pm2/lanonasis-mcp-stdio-combined.log',
+      error_file: 'logs/lanonasis-mcp-stdio-error.log',
+      out_file: 'logs/lanonasis-mcp-stdio-out.log',
+      log_file: 'logs/lanonasis-mcp-stdio-combined.log',
       time: true,
       merge_logs: true,
       exec_mode: 'fork',
