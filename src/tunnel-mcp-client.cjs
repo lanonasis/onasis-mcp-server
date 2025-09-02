@@ -104,15 +104,28 @@ class TunnelMCPClient {
   setupTools() {
     const z = require('zod');
     
-    // Wait for tunnel to establish, then register tools
-    setTimeout(async () => {
-      try {
-        const response = await this.makeHttpRequest('GET', '/api/tools');
-        console.error(`Discovered ${response.tools?.length || 0} remote tools`);
-      } catch (error) {
-        console.error(`Failed to discover remote tools: ${error.message}`);
-      }
-    }, 2000);
+    // Wait for tunnel to establish, then register tools with retry and configurable timeout
+    const initialTimeout = parseInt(process.env.TOOL_DISCOVERY_TIMEOUT_MS, 10) || 2000;
+    const maxRetries = 5;
+    const backoffFactor = 2;
+
+    const discoverToolsWithRetry = async (attempt = 1, delay = initialTimeout) => {
+      setTimeout(async () => {
+        try {
+          const response = await this.makeHttpRequest('GET', '/api/tools');
+          console.error(`Discovered ${response.tools?.length || 0} remote tools`);
+        } catch (error) {
+          if (attempt < maxRetries) {
+            console.error(`Tool discovery attempt ${attempt} failed: ${error.message}. Retrying in ${delay * backoffFactor}ms...`);
+            discoverToolsWithRetry(attempt + 1, delay * backoffFactor);
+          } else {
+            console.error(`Failed to discover remote tools after ${maxRetries} attempts: ${error.message}`);
+          }
+        }
+      }, delay);
+    };
+
+    discoverToolsWithRetry();
     
     // Health check tool
     this.server.registerTool('health_check', {
