@@ -1,0 +1,59 @@
+{
+  "mcpServers": {
+    "lanonasis-production-mcp": {
+      "command": "ssh",
+      "args": [
+        "vps",
+        "node",
+        "/opt/mcp-servers/lanonasis-standalone/current/src/production-mcp-server.cjs",
+        "--stdio"
+      ],
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "3001"
+      },
+      "description": "Lanonasis Production MCP Server via SSH",
+      "capabilities": {
+        "memory": true,
+        "tools": true,
+        "health": true,
+        "api": true,
+        "search": true
+      },
+      "toolCategories": [
+        "Memory Management: search_memories, create_memory, get_memory",
+        "Health Monitoring: health_check, get_server_metrics",
+        "API Tools: execute tools remotely on production server"
+      ],
+      "connection": {
+        "type": "stdio_over_ssh",
+        "host": "vps",
+        "server_path": "/opt/mcp-servers/lanonasis-standalone/current/src/production-mcp-server.cjs"
+      },
+      "security": {
+        "authentication": "ssh_key",
+        "encryption": "ssh_tunnel",
+        "access_control": "vps_firewall"
+      }
+    },
+    "lanonasis-local-tunnel": {
+      "command": "node",
+      "args": [
+        "/Users/seyederick/DevOps/_project_folders/onasis-mcp-standalone/src/tunnel-mcp-client.js"
+      ],
+      "env": {
+        "TUNNEL_HOST": "localhost",
+        "TUNNEL_PORT": "3001",
+        "VPS_HOST": "vps",
+        "NODE_ENV": "production"
+      },
+      "description": "Lanonasis MCP via SSH Tunnel (Alternative)",
+      "capabilities": {
+        "memory": true,
+        "tools": true,
+        "health": true,
+        "remote_execution": true
+      }
+    }
+  }
+}
