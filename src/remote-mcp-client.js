@@ -11,7 +11,7 @@ const axios = require('axios');
 
 class RemoteMCPClient {
   constructor() {
-    this.vpsHost = process.env.VPS_HOST || '168.231.74.29';
+    this.vpsHost = process.env.VPS_HOST || 'localhost';
     this.vpsPort = process.env.VPS_PORT || '3001';
     this.baseUrl = `http://${this.vpsHost}:${this.vpsPort}`;
     this.server = new Server(
