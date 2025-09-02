@@ -208,10 +208,10 @@ export class CLIAlignedMCPServer {
       try {
         switch (name) {
           case 'search_memories':
-            return await this.handleSearchMemories(mockReq as AuthenticatedRequest, args as MemorySearchParams);
+            return await this.handleSearchMemories(mockReq as AuthenticatedRequest, args as unknown as MemorySearchParams);
           
           case 'create_memory':
-            return await this.handleCreateMemory(mockReq as AuthenticatedRequest, args as MemoryCreateParams);
+            return await this.handleCreateMemory(mockReq as AuthenticatedRequest, args as unknown as MemoryCreateParams);
           
           case 'get_memory':
             return await this.handleGetMemory(mockReq as AuthenticatedRequest, args as { id: string });
@@ -468,8 +468,8 @@ export class CLIAlignedMCPServer {
     });
     
     // Protected MCP operations
-    this.httpApp.use('/mcp', CLIAuthMiddleware.authenticate);
-    this.httpApp.use('/mcp', CLIAuthMiddleware.enforceOrganizationIsolation);
+    this.httpApp.use('/mcp', CLIAuthMiddleware.authenticate as any);
+    this.httpApp.use('/mcp', CLIAuthMiddleware.enforceOrganizationIsolation as any);
     
     // MCP tool endpoints
     this.httpApp.post('/mcp/tools', async (req: AuthenticatedRequest, res: Response) => {

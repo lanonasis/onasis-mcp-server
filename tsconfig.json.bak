@@ -39,11 +39,10 @@
     "node_modules",
     "dist",
     "logs",
-    "scripts",
-    "src/netlify",
+    "scripts/**/*",
+    "src/netlify/**/*",
     "**/*.test.ts",
-    "**/*.spec.ts",
-    "**/*.js"
+    "**/*.spec.ts"
   ],
   "ts-node": {
     "esm": true,
