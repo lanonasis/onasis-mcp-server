@@ -446,7 +446,7 @@ router.put('/:id', asyncHandler(async (req: Request, res: Response) => {
   }
   const { userId, organizationId, role } = user;
 
-  const existingMemory = await memoryService.getMemoryById(id, organizationId);
+  const existingMemory = await memoryService.getMemoryById(id, organizationId, user.apiKey || "");
   
   if (!existingMemory) {
     res.status(404).json({
@@ -519,7 +519,7 @@ router.delete('/:id', asyncHandler(async (req: Request, res: Response) => {
   }
   const { userId, organizationId, role } = user;
 
-  const existingMemory = await memoryService.getMemoryById(id, organizationId);
+  const existingMemory = await memoryService.getMemoryById(id, organizationId, user.apiKey || "");
   
   if (!existingMemory) {
     res.status(404).json({
@@ -615,7 +615,6 @@ router.get('/admin/stats', requireRole(['admin']), asyncHandler(async (req: Requ
  *               properties:
  *                 deleted_count:
  *                   type: integer
- *                 failed_ids:
  *                   type: array
  *                   items:
  *                     type: string
@@ -655,8 +654,7 @@ router.post('/bulk/delete',
 
     logMemoryOperation('bulk_delete', userId, organizationId, {
       requested_count: memory_ids.length,
-      deleted_count: result.deleted_count,
-      failed_count: result.failed_ids.length
+      deleted_count: result.deleted,
     });
 
     res.json(result);
