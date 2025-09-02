@@ -148,7 +148,7 @@ EOF
 
 # Run the MCP client simulation
 if command -v node >/dev/null 2>&1; then
-    cd /Users/seyederick/DevOps/_project_folders/onasis-mcp-standalone
+    cd "$(dirname "$0")/.."
     node /tmp/test_mcp_client.js
 else
     log_warning "Node.js not available for MCP client simulation"
