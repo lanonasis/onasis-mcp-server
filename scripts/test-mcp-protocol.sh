@@ -52,7 +52,7 @@ const fs = require('fs');
 async function testMCPCapabilities() {
     console.log('🧪 Testing MCP Production Server Capabilities\n');
     
-    const serverPath = '/Users/seyederick/DevOps/_project_folders/onasis-mcp-standalone/src/production-mcp-server.cjs';
+    const serverPath = path.resolve('src/production-mcp-server.cjs');
     
     if (fs.existsSync(serverPath)) {
         console.log('✅ Production server file exists');
