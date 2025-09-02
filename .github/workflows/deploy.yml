@@ -34,15 +34,15 @@ jobs:
         
     - name: Add VPS to known hosts
       run: |
-        ssh-keyscan -p ${{ secrets.VPS_PORT }} -H $(echo ${{ secrets.VPS_HOST }} | cut -d@ -f2) >> ~/.ssh/known_hosts
+        ssh-keyscan -p 2222 -H 168.231.74.29 >> ~/.ssh/known_hosts
         
     - name: Deploy to VPS
       run: |
-        ssh -p ${{ secrets.VPS_PORT }} ${{ secrets.VPS_HOST }} << 'ENDSSH'
+        ssh -p 2222 root@168.231.74.29 << 'ENDSSH'
         set -e
         
         # Configuration
-        DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+        DEPLOY_PATH="/opt/mcp-servers/lanonasis-standalone"
         SERVICE_NAME="lanonasis-mcp-server"
         GIT_REPO="https://github.com/lanonasis/onasis-mcp-server.git"
         
@@ -105,14 +105,18 @@ jobs:
         pm2 stop $SERVICE_NAME 2>/dev/null || true
         pm2 delete $SERVICE_NAME 2>/dev/null || true
         
-        # Start the simple CommonJS server if ecosystem fails
-        if [ -f simple-mcp-server.cjs ]; then
+        # Start the production MCP server
+        if [ -f src/production-mcp-server.cjs ]; then
+          echo "🚀 Starting production MCP server..."
+          pm2 start src/production-mcp-server.cjs --name $SERVICE_NAME
+        elif [ -f simple-mcp-server.cjs ]; then
+          echo "⚠️  Production server not found, using simple fallback..."
           pm2 start simple-mcp-server.cjs --name $SERVICE_NAME
         elif [ -f ecosystem.config.js ]; then
           pm2 start ecosystem.config.js --env production
         else
-          echo "⚠️  No server configuration found, using simple fallback"
-          pm2 start ecosystem.config.js --env production || echo "Fallback server started"
+          echo "❌ No server configuration found"
+          exit 1
         fi
         
         pm2 save
