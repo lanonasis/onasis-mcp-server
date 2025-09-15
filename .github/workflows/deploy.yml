@@ -98,13 +98,13 @@ jobs:
           echo "📦 Building with multiple compatibility strategies..."
 
           # Strategy 1: Try Bun executable compilation (recommended by Bun docs)
-          if bun build --compile --minify --sourcemap src/unified-mcp-server.ts --outfile production-mcp-server 2>/dev/null; then
+          if bun build --compile --minify --sourcemap src/unified-mcp-server.ts --outfile production-mcp-server; then
             echo "✅ Strategy 1: Created self-contained executable"
             mv production-mcp-server src/production-mcp-server.cjs
             chmod +x src/production-mcp-server.cjs
 
           # Strategy 2: Node.js compatible bundle
-          elif bun build src/unified-mcp-server.ts --target=node --outfile=src/production-mcp-server.cjs --minify --define "process.env.NODE_ENV=\"production\"" 2>/dev/null; then
+          elif bun build src/unified-mcp-server.ts --target=node --outfile=src/production-mcp-server.cjs --minify --define "process.env.NODE_ENV=\"production\""; then
             echo "✅ Strategy 2: Created Node.js compatible bundle"
 
           # Strategy 3: Direct TypeScript with tsx runtime
