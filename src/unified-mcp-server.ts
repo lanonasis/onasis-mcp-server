@@ -37,11 +37,10 @@ const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '..', '.env.production') });
 
 // Global type declarations
-import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 declare global {
-  let mcpServerInstance: Server | undefined;
+  // Holds the app server instance for signal handlers
+  var mcpServerInstance: LanonasisUnifiedMCPServer | undefined;
 }
-
 // Configure logging
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
