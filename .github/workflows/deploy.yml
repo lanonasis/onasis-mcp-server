@@ -174,12 +174,21 @@ jobs:
           cp .env.example .env.production
         fi
         
+    - name: Deploy to VPS
+      env:
+        DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || '168.231.74.29' }}
+        DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '2222' }}
+        DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'root' }}
+        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
         # Create production environment file with secrets
         umask 177
         cat > .env.production <<EOF
-SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
-SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
+OPENAI_API_KEY=$OPENAI_API_KEY
 NODE_ENV=production
 PORT=3001
 EOF
