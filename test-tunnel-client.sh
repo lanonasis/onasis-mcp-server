@@ -13,6 +13,9 @@ echo -e "\n✅ Test 1 Complete\n"
 
 # Test 2: Verify SSH tunnel can connect to VPS
 echo "Test 2: Direct SSH tunnel test"
+# Ensure cleanup on script exit
+trap 'kill $SSH_PID 2>/dev/null || true' EXIT
+
 timeout 5s ssh -N -L 3002:localhost:3001 vps &
 SSH_PID=$!
 sleep 2
