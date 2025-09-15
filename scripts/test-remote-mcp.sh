@@ -36,11 +36,23 @@ cleanup_tunnel() {
 }
 trap cleanup_tunnel EXIT
 
-# Wait for tunnel to establish
-sleep 3
+# Replace fixed sleep with a readiness probe against the tunneled service
+WAIT_TIMEOUT="${WAIT_TIMEOUT:-15}"
+log_info "Waiting for tunnel readiness on localhost:${LOCAL_PORT} (timeout: ${WAIT_TIMEOUT}s)..."
+for i in $(seq 1 "$WAIT_TIMEOUT"); do
+  if curl -sSf "http://localhost:${LOCAL_PORT}/health" >/dev/null 2>&1; then
+    log_success "SSH tunnel established on localhost:${LOCAL_PORT}"
+    break
+  fi
+  sleep 1
+done
+if [ "${i:-$WAIT_TIMEOUT}" -eq "$WAIT_TIMEOUT" ]; then
+  log_error "Tunnel did not become ready within ${WAIT_TIMEOUT}s"
+  exit 1
+fi
 
-log_success "SSH tunnel established on localhost:3001"
-
+# Set base URL for subsequent requests
+BASE_URL="http://localhost:${LOCAL_PORT}"
 # Step 2: Test MCP server endpoints through tunnel
 echo ""
 log_info "Testing MCP Server Endpoints via SSH Tunnel..."
