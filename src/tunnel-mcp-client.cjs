@@ -198,10 +198,10 @@ Connection: ${this.baseUrl} → ${this.vpsHost}:3001`
     // Search memories tool
     this.server.registerTool('search_memories', {
       description: 'Search stored memories on the remote server',
-      inputSchema: {
+      inputSchema: z.object({
         query: z.string().describe('The search query'),
         limit: z.number().optional().describe('Maximum number of results')
-      },
+      }),
     }, async ({ query, limit }) => {
       try {
         const result = await this.makeHttpRequest('POST', '/api/execute/search_memories', {
