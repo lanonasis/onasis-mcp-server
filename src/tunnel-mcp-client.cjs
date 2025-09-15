@@ -42,6 +42,9 @@ class TunnelMCPClient {
     console.error(`Creating SSH tunnel: ${this.vpsHost}:3001 → localhost:${this.tunnelPort}`);
     
     this.tunnelProcess = spawn('ssh', [
+      '-o', 'ConnectTimeout=10',
+      '-o', 'ServerAliveInterval=30',
+      '-o', 'ServerAliveCountMax=3',
       '-N', 
       '-L', `${this.tunnelPort}:localhost:3001`, 
       this.vpsHost
