@@ -15,7 +15,7 @@ import {
   McpError 
 } from '@modelcontextprotocol/sdk/types.js';
 
-import express from 'express';
+import express, { Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -198,8 +198,10 @@ export class CLIAlignedMCPServer {
       if (user) {
         mockReq.user = {
           id: user.organization_id,
+          userId: user.organization_id, // Duplicate for UnifiedUser compatibility
           email: user.email,
           organization_id: user.organization_id,
+          organizationId: user.organization_id, // Duplicate for UnifiedUser compatibility
           role: user.role,
           plan: user.plan
         };
@@ -472,10 +474,10 @@ export class CLIAlignedMCPServer {
     this.httpApp.use('/mcp', CLIAuthMiddleware.enforceOrganizationIsolation as any);
     
     // MCP tool endpoints
-    this.httpApp.post('/mcp/tools', async (req: AuthenticatedRequest, res: Response) => {
+    this.httpApp.post('/mcp/tools', (async (req: AuthenticatedRequest, res: Response) => {
       try {
         const { tool, arguments: args } = req.body;
-        
+
         // Mock call tool request
         const mockRequest = {
           params: {
@@ -483,13 +485,13 @@ export class CLIAlignedMCPServer {
             arguments: args
           }
         };
-        
+
         // Handle through existing tool handler
         const result = await this.server.request(
           { method: 'tools/call', params: mockRequest.params },
           {} as any
         );
-        
+
         res.json(result);
       } catch (error) {
         res.status(500).json({
@@ -497,7 +499,7 @@ export class CLIAlignedMCPServer {
           message: (error as Error).message
         });
       }
-    });
+    }) as any);
     
     this.httpApp.listen(port, () => {
       console.log(`✅ CLI-Aligned MCP Server HTTP ready on port ${port}`);
