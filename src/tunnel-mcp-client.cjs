@@ -56,49 +56,25 @@ class TunnelMCPClient {
   }
 
   async makeHttpRequest(method, path, data = null) {
-    // Simple HTTP client using curl since we can't rely on axios being available
-    return new Promise((resolve, reject) => {
-      const curlArgs = [
-        '-s',
-        '--connect-timeout', '5',
-        '--max-time', '10',
-        '-X', method.toUpperCase()
-      ];
-
-      if (data) {
-        curlArgs.push('-H', 'Content-Type: application/json');
-        curlArgs.push('-d', JSON.stringify(data));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const res = await fetch(`${this.baseUrl}${path}`, {
+        method: method.toUpperCase(),
+        headers: data ? { 'Content-Type': 'application/json' } : undefined,
+        body: data ? JSON.stringify(data) : undefined,
+        signal: controller.signal
+      });
+      const text = await res.text();
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}: ${text}`);
+      try {
+        return JSON.parse(text);
+      } catch {
+        return { raw: text };
       }
-
-      curlArgs.push(`${this.baseUrl}${path}`);
-
-      const curl = spawn('curl', curlArgs, {
-        stdio: ['ignore', 'pipe', 'pipe']
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      curl.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      curl.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      curl.on('close', (code) => {
-        if (code === 0) {
-          try {
-            resolve(JSON.parse(stdout));
-          } catch (e) {
-            resolve({ raw: stdout });
-          }
-        } else {
-          reject(new Error(`HTTP request failed: ${stderr || stdout}`));
-        }
-      });
-    });
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   setupTools() {
