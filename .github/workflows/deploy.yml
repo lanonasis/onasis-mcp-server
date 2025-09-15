@@ -210,16 +210,7 @@ EOF
           fi
         done
 
-        if [ -x src/production-mcp-server.bin ]; then
-          echo "🚀 Starting UNIFIED MCP native binary..."
-          if pm2 start src/production-mcp-server.bin --name "$SERVICE_NAME"; then
-            echo "✅ PM2 startup command succeeded"
-          else
-            echo "❌ PM2 startup failed (binary), exit code: $?"
-            pm2 logs "$SERVICE_NAME" --lines 20 --nostream || true
-            exit 1
-          fi
-        elif [ -r src/production-mcp-server.cjs ]; then
+        if [ -r src/production-mcp-server.cjs ]; then
           echo "🚀 Starting UNIFIED MCP Server (17+ tools, full-featured)..."
           echo "📄 Server file: src/production-mcp-server.cjs"
           echo "📊 File size: $(du -h src/production-mcp-server.cjs 2>/dev/null | cut -f1 || echo 'unknown')"
