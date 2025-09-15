@@ -83,7 +83,7 @@ jobs:
         echo "📦 Ensuring runtime prerequisites..."
         if ! command -v pm2 >/dev/null; then
           echo "Installing PM2..."
-          npm i -g pm2 || (corepack enable && pnpm dlx pm2 -v >/dev/null)
+          npm i -g pm2 || (corepack enable && pnpm add -g pm2) || { echo "❌ PM2 install failed"; exit 1; }
         fi
         if ! command -v bun >/dev/null; then
           echo "Installing Bun..."
@@ -93,7 +93,6 @@ jobs:
           echo "Installing Node.js..."
           curl -fsSL https://deb.nodesource.com/setup_lts.x | bash && apt-get install -y nodejs
         fi
-        
         # Install dependencies including runtime fallbacks
         echo "📦 Installing dependencies..."
         bun install --production --frozen-lockfile || bun install --production || npm ci --omit=dev
