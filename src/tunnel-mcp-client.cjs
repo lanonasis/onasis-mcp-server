@@ -5,8 +5,19 @@
  * Creates SSH tunnel and provides MCP protocol interface to remote server
  */
 
-const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
+// src/tunnel-mcp-client.cjs
+
+// … (other requires)
+
+const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
+
+// … (rest of file)
+
+// around line 20
+this.server = new Server({
+  // existing configuration options
+});
 const { spawn } = require('child_process');
 const { promisify } = require('util');
 
