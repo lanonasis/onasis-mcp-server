@@ -1,0 +1,38 @@
+{
+  "mcpServers": {
+    "lanonasis-vps-mcp": {
+      "command": "node",
+      "args": [
+        "/Users/seyederick/DevOps/_project_folders/onasis-mcp-standalone/src/remote-mcp-client.js",
+        "--stdio"
+      ],
+      "env": {
+        "VPS_HOST": "168.231.74.29",
+        "VPS_PORT": "3001",
+        "MCP_MODE": "remote_http",
+        "NODE_ENV": "production"
+      },
+      "description": "Lanonasis VPS MCP Server - Direct HTTP connection to production server",
+      "capabilities": {
+        "memory": true,
+        "tools": true,
+        "health": true,
+        "api": true,
+        "metrics": true
+      },
+      "toolCategories": [
+        "Memory Management: search, create, get, update, delete memories",
+        "Health Monitoring: server health checks and metrics",
+        "Tool Execution: execute available MCP tools remotely",
+        "API Access: full REST API functionality"
+      ],
+      "connection": {
+        "type": "http",
+        "base_url": "http://168.231.74.29:3001",
+        "health_endpoint": "/health",
+        "tools_endpoint": "/api/tools",
+        "execute_endpoint": "/api/execute"
+      }
+    }
+  }
+}
