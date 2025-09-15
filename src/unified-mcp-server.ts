@@ -37,8 +37,9 @@ const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '..', '.env.production') });
 
 // Global type declarations
+import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 declare global {
-  var mcpServerInstance: any;
+  let mcpServerInstance: Server | undefined;
 }
 
 // Configure logging
