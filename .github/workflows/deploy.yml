@@ -173,27 +173,18 @@ jobs:
           echo "Creating basic .env.production..."
           cp .env.example .env.production
         fi
-        
-    - name: Deploy to VPS
-      env:
-        DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || '168.231.74.29' }}
-        DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '2222' }}
-        DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'root' }}
-        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      run: |
+
         # Create production environment file with secrets
         umask 177
         cat > .env.production <<EOF
-SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
-OPENAI_API_KEY=$OPENAI_API_KEY
+SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
 NODE_ENV=production
 PORT=3001
 EOF
         chmod 600 .env.production
-        
+
         # Copy SSL certificate if exists
         if [ -f "src/config/prod-ca-2021.crt" ]; then
           cp src/config/prod-ca-2021.crt /opt/certs/
@@ -202,12 +193,12 @@ EOF
           chmod 700 /opt/certs || true
           echo "✅ SSL certificate configured"
         fi
-        
+
         # Restart PM2 service
         echo "🔄 Restarting service..."
         pm2 stop $SERVICE_NAME 2>/dev/null || true
         pm2 delete $SERVICE_NAME 2>/dev/null || true
-        
+
         # Start the production MCP server with verification
         echo "🔍 Checking available server files..."
         for f in src/production-mcp-server.cjs src/production-mcp-server.bin simple-mcp-server.cjs ecosystem.config.js; do
@@ -257,9 +248,9 @@ EOF
           ls -la
           exit 1
         fi
-        
+
         pm2 save
-        
+
         # Wait and check status
         sleep 5
         if pm2 list | grep -Eq "($SERVICE_NAME|ecosystem).*online"; then
@@ -272,10 +263,10 @@ EOF
           pm2 logs "$SERVICE_NAME" --lines 20
           exit 1
         fi
-        
+
         echo "🎉 Automated deployment completed at $(date)"
         echo "📦 Deployed commit: $(git rev-parse --short HEAD)"
-        
+
         ENDSSH
         
     - name: Verify deployment
