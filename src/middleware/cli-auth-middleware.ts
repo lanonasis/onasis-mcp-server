@@ -2,14 +2,18 @@ import { Request, Response, NextFunction } from 'express';
 import { cliAuthConfig } from '../config/cli-auth.js';
 import axios from 'axios';
 
+interface UnifiedUser {
+  id: string;
+  userId: string;
+  email: string;
+  organization_id: string;
+  organizationId: string;
+  role: string;
+  plan: string;
+}
+
 interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string;
-    email: string;
-    organization_id: string;
-    role: string;
-    plan: string;
-  };
+  user?: UnifiedUser;
   vendorKey?: string;
   organizationId?: string;
 }
@@ -72,8 +76,10 @@ export class CLIAuthMiddleware {
           if (user) {
             req.user = {
               id: user.organization_id, // Using org ID as user ID for now
+              userId: user.organization_id, // Duplicate for UnifiedUser compatibility
               email: user.email,
               organization_id: user.organization_id,
+              organizationId: user.organization_id, // Duplicate for UnifiedUser compatibility
               role: user.role,
               plan: user.plan
             };
@@ -234,4 +240,4 @@ export class CLIAuthMiddleware {
   }
 }
 
-export { AuthenticatedRequest };
+export type { AuthenticatedRequest };

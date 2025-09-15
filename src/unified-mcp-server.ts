@@ -36,6 +36,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '..', '.env.production') });
 
+// Global type declarations
+declare global {
+  // Holds the app server instance for signal handlers
+  var mcpServerInstance: LanonasisUnifiedMCPServer | undefined;
+}
 // Configure logging
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
@@ -91,7 +96,7 @@ interface LanonasisMCPServerConfig {
 }
 
 class LanonasisUnifiedMCPServer {
-  private config: LanonasisMCPServerConfig;
+  public config: LanonasisMCPServerConfig;
   private supabase: any;
   private memoryService: any;
   private currentAuthContext: any;
@@ -924,7 +929,7 @@ class LanonasisUnifiedMCPServer {
 
   async updateMemoryTool(args) {
     try {
-      const updates = { updated_at: new Date().toISOString() };
+      const updates: any = { updated_at: new Date().toISOString() };
       
       if (args.title) updates.title = args.title;
       if (args.content) updates.content = args.content;
@@ -1179,7 +1184,7 @@ class LanonasisUnifiedMCPServer {
 
   // System Tools
   async getHealthStatusTool(args) {
-    const healthData = {
+    const healthData: any = {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       version: '1.0.0',
@@ -1248,7 +1253,7 @@ class LanonasisUnifiedMCPServer {
   }
 
   async getOrganizationInfoTool(args) {
-    const orgInfo = {
+    const orgInfo: any = {
       name: 'Lanonasis Organization',
       plan: 'enterprise',
       features: [
