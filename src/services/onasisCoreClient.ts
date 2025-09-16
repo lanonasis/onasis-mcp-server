@@ -121,7 +121,7 @@ export class OnasisCoreClient {
       });
 
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to create memory via Onasis-CORE', { error, memory_data: { id, ...data } });
       
       if (axios.isAxiosError(error)) {
@@ -129,7 +129,7 @@ export class OnasisCoreClient {
           throw new InternalServerError('Unauthorized - Invalid API key or token');
         } else if (error.response?.status === 403) {
           throw new InternalServerError('Forbidden - Insufficient permissions');
-        } else if (error.response?.status >= 400 && error.response?.status < 500) {
+        } else if (error.response && error.response.status >= 400 && error.response.status < 500) {
           throw new InternalServerError(`Client error: ${error.response.data?.message || error.message}`);
         }
       }
@@ -148,7 +148,7 @@ export class OnasisCoreClient {
       });
 
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       if (axios.isAxiosError(error) && error.response?.status === 404) {
         return null;
       }
@@ -173,7 +173,7 @@ export class OnasisCoreClient {
       });
 
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to update memory via Onasis-CORE', { error, id, updateData: data });
       throw new InternalServerError('Failed to update memory entry via Onasis-CORE');
     }
@@ -185,7 +185,7 @@ export class OnasisCoreClient {
   async deleteMemory(id: string): Promise<void> {
     try {
       await this.client.delete(`/api/v1/memory/${id}`);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to delete memory via Onasis-CORE', { error, id });
       throw new InternalServerError('Failed to delete memory entry via Onasis-CORE');
     }
@@ -215,7 +215,7 @@ export class OnasisCoreClient {
       });
 
       return response.data.results || [];
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to search memories via Onasis-CORE', { error, query, organizationId, filters });
       throw new InternalServerError('Failed to search memories via Onasis-CORE');
     }
@@ -257,7 +257,7 @@ export class OnasisCoreClient {
       });
 
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to list memories via Onasis-CORE', { error, filters, options });
       throw new InternalServerError('Failed to list memories via Onasis-CORE');
     }
@@ -269,7 +269,7 @@ export class OnasisCoreClient {
   async updateAccessTracking(id: string): Promise<void> {
     try {
       await this.client.post(`/api/v1/memory/${id}/access`);
-    } catch (error) {
+    } catch (error: any) {
       logger.warn('Failed to update access tracking via Onasis-CORE', { error, id });
       // Don't throw error as this is not critical
     }
@@ -285,7 +285,7 @@ export class OnasisCoreClient {
       });
 
       return response.data.count || 0;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to get memory count via Onasis-CORE', { error, organizationId });
       throw new InternalServerError('Failed to get memory count via Onasis-CORE');
     }
@@ -308,7 +308,7 @@ export class OnasisCoreClient {
       });
 
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to get memory stats via Onasis-CORE', { error, organizationId });
       throw new InternalServerError('Failed to get memory statistics via Onasis-CORE');
     }
@@ -336,7 +336,7 @@ export class OnasisCoreClient {
       });
 
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to bulk delete memories via Onasis-CORE', { error, memoryIds, organizationId });
       throw new InternalServerError('Failed to bulk delete memories via Onasis-CORE');
     }
@@ -349,7 +349,7 @@ export class OnasisCoreClient {
     try {
       const response = await this.client.get('/health');
       return response.status === 200;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Onasis-CORE health check failed', { error: error.message });
       return false;
     }

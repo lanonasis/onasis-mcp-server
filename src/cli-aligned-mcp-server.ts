@@ -15,7 +15,7 @@ import {
   McpError 
 } from '@modelcontextprotocol/sdk/types.js';
 
-import express, { Response } from 'express';
+import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -35,7 +35,7 @@ interface MemoryCreateParams {
   title?: string;
   type?: string;
   tags?: string[];
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -198,10 +198,9 @@ export class CLIAlignedMCPServer {
       if (user) {
         mockReq.user = {
           id: user.organization_id,
-          userId: user.organization_id, // Duplicate for UnifiedUser compatibility
+          userId: user.organization_id,
           email: user.email,
-          organization_id: user.organization_id,
-          organizationId: user.organization_id, // Duplicate for UnifiedUser compatibility
+          organizationId: user.organization_id,
           role: user.role,
           plan: user.plan
         };
@@ -470,11 +469,11 @@ export class CLIAlignedMCPServer {
     });
     
     // Protected MCP operations
-    this.httpApp.use('/mcp', CLIAuthMiddleware.authenticate as any);
-    this.httpApp.use('/mcp', CLIAuthMiddleware.enforceOrganizationIsolation as any);
+    this.httpApp.use('/mcp', CLIAuthMiddleware.authenticate as express.RequestHandler);
+    this.httpApp.use('/mcp', CLIAuthMiddleware.enforceOrganizationIsolation as express.RequestHandler);
     
     // MCP tool endpoints
-    this.httpApp.post('/mcp/tools', (async (req: AuthenticatedRequest, res: Response) => {
+    this.httpApp.post('/mcp/tools', async (req: express.Request, res: express.Response) => {
       try {
         const { tool, arguments: args } = req.body;
 
@@ -489,7 +488,7 @@ export class CLIAlignedMCPServer {
         // Handle through existing tool handler
         const result = await this.server.request(
           { method: 'tools/call', params: mockRequest.params },
-          {} as any
+          CallToolRequestSchema
         );
 
         res.json(result);
@@ -499,7 +498,7 @@ export class CLIAlignedMCPServer {
           message: (error as Error).message
         });
       }
-    }) as any);
+    });
     
     this.httpApp.listen(port, () => {
       console.log(`✅ CLI-Aligned MCP Server HTTP ready on port ${port}`);

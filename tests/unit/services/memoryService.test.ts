@@ -66,6 +66,11 @@ const mockOpenAI = {
 };
 
 jest.mock('../../../src/config/environment', () => ({
+  config: {
+    LOG_FORMAT: 'simple',
+    LOG_LEVEL: 'error',
+    NODE_ENV: 'test',
+  },
   getSupabaseClient: () => mockSupabase,
 }));
 

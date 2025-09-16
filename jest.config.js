@@ -27,11 +27,14 @@ export default {
       statements: 30,
     },
   },
-  setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
+  setupFilesAfterEnv: [
+    '<rootDir>/tests/jest.setup.env.ts',
+    '<rootDir>/tests/setup.ts'
+  ],
   testTimeout: 10000,
   verbose: true,
   // Handle ES modules and path aliases
-  moduleNameMapping: {
+  moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   extensionsToTreatAsEsm: ['.ts'],
