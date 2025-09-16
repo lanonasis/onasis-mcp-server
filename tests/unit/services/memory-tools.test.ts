@@ -29,7 +29,7 @@ describe('Memory Management Tools', () => {
                 range: jest.fn().mockResolvedValue({ data: [], error: null, count: 0 }),
               })),
             })),
-          }),
+          })),
           order: jest.fn(() => ({
             range: jest.fn().mockResolvedValue({ data: [], error: null, count: 0 }),
           })),
