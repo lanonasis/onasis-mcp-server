@@ -29,13 +29,14 @@ import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
+import type { Server as HttpServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import winston from 'winston';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import {
+import type {
   HealthStatus,
   OrganizationInfo,
   MemoryUpdateData,
@@ -165,7 +166,6 @@ interface DeleteApiKeyArgs {
 interface GetHealthStatusArgs {
   include_metrics?: boolean;
 }
-interface GetAuthStatusArgs {}
 interface GetOrganizationInfoArgs {
   include_usage?: boolean;
 }
@@ -195,12 +195,14 @@ interface SetConfigToolArgs {
 class LanonasisUnifiedMCPServer {
   public config: LanonasisMCPServerConfig;
   private supabase: SupabaseClient;
-  private currentAuthContext: any;
+  private currentAuthContext: Record<string, unknown> | null = null;
   private mcpServer: Server | null;
-  private httpServer: any;
-  private wsServer: any;
+  private httpServer: HttpServer | null;
+  private wsHttpServer: HttpServer | null;
+  private wsServer: WebSocketServer | null;
+  private sseServer: HttpServer | null;
   private sseClients: Set<express.Response>;
-  private tools: Record<string, (args: unknown) => Promise<any>>;
+  private tools: Record<string, (args: unknown) => Promise<unknown>>;
 
   constructor() {
     this.config = {
@@ -231,10 +233,13 @@ class LanonasisUnifiedMCPServer {
     // Initialize Supabase client
     this.supabase = createClient(this.config.supabaseUrl, this.config.supabaseKey);
 
+
     // Initialize servers
     this.mcpServer = null;
     this.httpServer = null;
+    this.wsHttpServer = null;
     this.wsServer = null;
+    this.sseServer = null;
     this.sseClients = new Set();
 
     // Initialize tool implementations
@@ -249,7 +254,7 @@ class LanonasisUnifiedMCPServer {
   /**
    * Initialize all 17+ MCP tools
    */
-  initializeTools(): Record<string, (args: unknown) => Promise<any>> {
+  initializeTools(): Record<string, (args: unknown) => Promise<unknown>> {
     return {
       // Memory Management Tools (6 tools)
       create_memory: (args) => this.createMemoryTool(args as CreateMemoryArgs),
@@ -267,7 +272,7 @@ class LanonasisUnifiedMCPServer {
 
       // System & Organization Tools (7 tools)
       get_health_status: (args) => this.getHealthStatusTool(args as GetHealthStatusArgs),
-      get_auth_status: (args) => this.getAuthStatusTool(args as GetAuthStatusArgs),
+      get_auth_status: () => this.getAuthStatusTool(),
       get_organization_info: (args) =>
         this.getOrganizationInfoTool(args as GetOrganizationInfoArgs),
       create_project: (args) => this.createProjectTool(args as CreateProjectArgs),
@@ -581,8 +586,8 @@ class LanonasisUnifiedMCPServer {
     }));
 
     // Call tool handler
-    this.mcpServer.setRequestHandler(CallToolRequestSchema, async (request: any) => {
-      const { name, arguments: args } = request.params;
+    this.mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params as { name: string; arguments?: unknown };
       const handler = this.tools[name];
       if (!handler) {
         throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
@@ -772,6 +777,8 @@ class LanonasisUnifiedMCPServer {
   async startWebSocketServer() {
     const server = createServer();
     const wss = new WebSocketServer({ server });
+    this.wsServer = wss;
+    this.wsHttpServer = server;
 
     wss.on('connection', (ws, request) => {
       logger.info('New WebSocket connection', {
@@ -927,7 +934,7 @@ class LanonasisUnifiedMCPServer {
       }
     });
 
-    const sseServer = app.listen(this.config.ssePort, this.config.host, () => {
+    this.sseServer = app.listen(this.config.ssePort, this.config.host, () => {
       logger.info(`SSE server started on ${this.config.host}:${this.config.ssePort}`);
     });
   }
@@ -935,7 +942,7 @@ class LanonasisUnifiedMCPServer {
   /**
    * Broadcast message to all SSE clients
    */
-  broadcastToSSE(event: string, data: any) {
+  broadcastToSSE(event: string, data: unknown) {
     const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
     this.sseClients.forEach((client) => {
       try {
@@ -1167,7 +1174,7 @@ class LanonasisUnifiedMCPServer {
 
   async deleteMemoryTool(args: DeleteMemoryArgs) {
     try {
-      const { data, error } = await this.supabase
+      const { error } = await this.supabase
         .from('memory_entries')
         .update({ status: 'deleted', deleted_at: new Date().toISOString() })
         .eq('id', args.id)
@@ -1449,7 +1456,7 @@ class LanonasisUnifiedMCPServer {
     return healthData;
   }
 
-  async getAuthStatusTool(_: GetAuthStatusArgs) {
+  async getAuthStatusTool() {
     return {
       status: 'authenticated',
       server: 'lanonasis-mcp-server',
@@ -1470,7 +1477,7 @@ class LanonasisUnifiedMCPServer {
   }
 
   async getOrganizationInfoTool(args: GetOrganizationInfoArgs): Promise<OrganizationInfo> {
-    const orgInfo: any = {
+    const orgInfo = {
       name: 'Lanonasis Organization',
       plan: 'enterprise',
       features: [
@@ -1494,20 +1501,20 @@ class LanonasisUnifiedMCPServer {
           .select('id', { count: 'exact' })
           .eq('status', 'active');
 
-        orgInfo.usage = {
+        (orgInfo as any).usage = {
           memories_used: memoryCount || 0,
           api_keys_active: await this.getActiveApiKeyCount(),
         };
       } catch (error: unknown) {
         if (error instanceof Error) {
-          orgInfo.usage_error = error.message;
+          (orgInfo as any).usage_error = error.message;
         } else {
-          orgInfo.usage_error = 'Unknown error retrieving usage';
+          (orgInfo as any).usage_error = 'Unknown error retrieving usage';
         }
       }
     }
 
-    return orgInfo;
+    return orgInfo as OrganizationInfo;
   }
 
   async createProjectTool(args: CreateProjectArgs) {
@@ -1700,16 +1707,30 @@ class LanonasisUnifiedMCPServer {
         this.httpServer.close();
         logger.info('HTTP server closed');
       }
+      if (this.sseServer) {
+        this.sseServer.close();
+        logger.info('SSE server closed');
+      }
 
       // Close SSE connections
       this.sseClients.forEach((client) => {
         try {
           client.end();
         } catch {
-          //
+          // intentionally ignore errors when ending SSE clients
+          void 0;
         }
       });
       this.sseClients.clear();
+
+      if (this.wsServer) {
+        this.wsServer.close();
+        logger.info('WebSocket server closed');
+      }
+      if (this.wsHttpServer) {
+        this.wsHttpServer.close();
+        logger.info('WebSocket HTTP server closed');
+      }
 
       if (this.mcpServer) {
         await this.mcpServer.close?.();
@@ -1745,7 +1766,7 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
   logger.error('Unhandled rejection at:', promise, 'reason:', reason);
   process.exit(1);
 });
