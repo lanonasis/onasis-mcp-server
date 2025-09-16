@@ -1,15 +1,28 @@
 export default {
-  preset: 'ts-jest',
+  preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
-  roots: ['<rootDir>/src', '<rootDir>/tests'],
+  roots: ['<rootDir>/tests'],
   testMatch: [
-    '**/tests/**/*.(test|spec).(ts|js)',
-    '**/__tests__/**/*.(test|spec).(ts|js)',
-    '**/*.(test|spec).(ts|js)'
+    '<rootDir>/tests/**/*.(test|spec).(ts|js)'
+  ],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/dist/',
+    '/.next/'
   ],
   transform: {
-    '^.+\\.ts$': 'ts-jest',
+    '^.+\\.ts$': ['ts-jest', {
+      useESM: true,
+      tsconfig: {
+        module: 'esnext',
+        target: 'es2020',
+        moduleResolution: 'node'
+      }
+    }],
   },
+  transformIgnorePatterns: [
+    'node_modules/(?!(@modelcontextprotocol|chalk|ora)/)'
+  ],
   collectCoverageFrom: [
     'src/**/*.{ts,js}',
     '!src/**/*.d.ts',
@@ -28,8 +41,7 @@ export default {
     },
   },
   setupFilesAfterEnv: [
-    '<rootDir>/tests/jest.setup.env.ts',
-    '<rootDir>/tests/setup.ts'
+    '<rootDir>/tests/jest.setup.env.ts'
   ],
   testTimeout: 10000,
   verbose: true,
@@ -38,9 +50,4 @@ export default {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   extensionsToTreatAsEsm: ['.ts'],
-  globals: {
-    'ts-jest': {
-      useESM: true,
-    },
-  },
 };

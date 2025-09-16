@@ -7,7 +7,7 @@ import express from 'express';
 import { LanonasisUnifiedMCPServer } from '../../../src/unified-mcp-server';
 
 // Mock the server methods to avoid actual Supabase calls
-jest.mock('../../src/unified-mcp-server');
+jest.mock('../../../src/unified-mcp-server');
 
 describe('HTTP API Endpoints', () => {
   let app: express.Application;
@@ -19,7 +19,7 @@ describe('HTTP API Endpoints', () => {
     app.use(express.json());
     
     // Mock the tool methods to return predictable results
-    server.tools = {
+    (server as any).tools = {
       create_memory: jest.fn().mockResolvedValue({ success: true, message: 'Memory created' }),
       search_memories: jest.fn().mockResolvedValue({ success: true, memories: [] }),
       get_memory: jest.fn().mockResolvedValue({ success: true, memory: { id: 'test' } }),

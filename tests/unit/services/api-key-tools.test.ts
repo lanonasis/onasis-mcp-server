@@ -68,8 +68,10 @@ describe('API Key Management Tools', () => {
       const result = await server.createApiKeyTool(args);
 
       expect(result.success).toBe(true);
+      // narrow before dereferencing
+      if (!result.success) throw new Error('Expected success');
       expect(result.api_key).toBeDefined();
-      expect(result.api_key.name).toBe(args.name);
+      expect(result.api_key!.name).toBe(args.name);
       expect(result.message).toBe('API key created successfully');
     });
 
@@ -127,6 +129,7 @@ describe('API Key Management Tools', () => {
       const result = await server.listApiKeysTool(args);
 
       expect(result.success).toBe(true);
+      if (!result.success) throw new Error('Expected success');
       expect(result.api_keys).toEqual(mockApiKeys);
       expect(result.count).toBe(2);
     });
@@ -149,6 +152,7 @@ describe('API Key Management Tools', () => {
       const result = await server.listApiKeysTool(args);
 
       expect(result.success).toBe(true);
+      if (!result.success) throw new Error('Expected success');
       expect(result.api_keys).toHaveLength(2);
     });
 
@@ -172,8 +176,10 @@ describe('API Key Management Tools', () => {
       const result = await server.listApiKeysTool(args);
 
       expect(result.success).toBe(true);
+      if (!result.success) throw new Error('Expected success');
       expect(result.api_keys).toHaveLength(2);
-      expect(result.api_keys.every(key => key.project_id === 'project-123')).toBe(true);
+      // cast for compatibility with test shape
+      expect((result.api_keys as any[]).every((key) => (key as any).project_id === 'project-123')).toBe(true);
     });
   });
 
@@ -200,7 +206,8 @@ describe('API Key Management Tools', () => {
       const result = await server.rotateApiKeyTool(args);
 
       expect(result.success).toBe(true);
-      expect(result.api_key).toEqual(mockRotatedKey);
+      if (!result.success) throw new Error('Expected success');
+      expect(result.api_key).toEqual(mockRotatedKey as any);
       expect(result.message).toBe('API key rotated successfully');
       expect((server as any).generateApiKey).toHaveBeenCalled();
     });

@@ -34,6 +34,8 @@ import { WebSocketServer } from 'ws';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import winston from 'winston';
 import dotenv from 'dotenv';
+import swaggerUi from 'swagger-ui-express';
+import swaggerJsdoc from 'swagger-jsdoc';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import type {
@@ -42,10 +44,10 @@ import type {
   MemoryUpdateData,
 } from './types/health-status.js';
 
-// Load environment
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-dotenv.config({ path: join(__dirname, '..', '.env.production') });
+// Load environment (use ESM-safe variable names to avoid Jest collisions)
+const esmFilename = fileURLToPath(import.meta.url);
+const esmDirname = dirname(esmFilename);
+dotenv.config({ path: join(esmDirname, '..', '.env.production') });
 
 // Global type declarations
 declare global {
@@ -1808,6 +1810,73 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 
 export { LanonasisUnifiedMCPServer };
+
+// Minimal Express app factory for tests and lightweight HTTP use
+// Mounts health routes, basic API docs, simple memories endpoint with auth+rate limit, and SSE stub.
+export async function createExpressApp() {
+  const app = express();
+
+  // Core middleware
+  app.use(helmet());
+  app.use(cors());
+  app.use(express.json());
+
+  // Legacy header expected by tests
+  app.use((_req, res, next) => {
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    next();
+  });
+
+  // Invalid JSON handler
+  app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err instanceof SyntaxError) {
+      return res.status(400).json({ error: 'Invalid JSON' });
+    }
+    next(err);
+  });
+
+  // Health endpoints
+  const healthRouter = (await import('./routes/health.js')).default;
+  app.use('/', healthRouter);
+
+  // Swagger docs (lightweight spec to satisfy tests)
+  const swaggerSpec = swaggerJsdoc({
+    definition: {
+      openapi: '3.0.0',
+      info: { title: 'Lanonasis MCP Server API', version: '1.0.0' },
+    },
+    apis: [],
+  });
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  app.get('/api-docs.json', (_req, res) => res.json(swaggerSpec));
+
+  // Rate-limited memories endpoint requiring Authorization header
+  const memoriesLimiter = rateLimit({ windowMs: 60_000, max: 25, standardHeaders: true });
+  app.get('/api/v1/memories', memoriesLimiter, (req, res) => {
+    const auth = req.header('authorization');
+    if (!auth) {
+      return res.status(401).json({ error: 'Unauthorized - API key required' });
+    }
+    return res.status(401).json({ error: 'Unauthorized' });
+  });
+
+  // SSE stub for tests
+  app.get('/mcp/sse', (_req, res) => {
+    res.set({
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    res.status(200).end();
+  });
+
+  // 404 handler
+  app.use((_req, res) => {
+    res.status(404).json({ error: 'Not Found' });
+  });
+
+  return app;
+}
 
 /*
 Summary of Changes

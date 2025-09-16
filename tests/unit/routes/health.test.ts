@@ -26,6 +26,11 @@ describe('Health Routes', () => {
         service: 'Lanonasis MCP Server',
         timestamp: expect.any(String),
         version: expect.any(String),
+        uptime: expect.any(Number),
+        dependencies: {
+          database: { status: 'healthy', response_time: 1 },
+          openai: { status: 'healthy', response_time: 1 },
+        },
       });
 
       // Validate timestamp is recent (within last minute)
