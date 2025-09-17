@@ -1,15 +1,28 @@
 export default {
-  preset: 'ts-jest',
+  preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
-  roots: ['<rootDir>/src', '<rootDir>/tests'],
+  roots: ['<rootDir>/tests'],
   testMatch: [
-    '**/tests/**/*.(test|spec).(ts|js)',
-    '**/__tests__/**/*.(test|spec).(ts|js)',
-    '**/*.(test|spec).(ts|js)'
+    '<rootDir>/tests/**/*.(test|spec).(ts|js)'
+  ],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/dist/',
+    '/.next/'
   ],
   transform: {
-    '^.+\\.ts$': 'ts-jest',
+    '^.+\\.ts$': ['ts-jest', {
+      useESM: true,
+      tsconfig: {
+        module: 'esnext',
+        target: 'es2020',
+        moduleResolution: 'node'
+      }
+    }],
   },
+  transformIgnorePatterns: [
+    'node_modules/(?!(@modelcontextprotocol|chalk|ora)/)'
+  ],
   collectCoverageFrom: [
     'src/**/*.{ts,js}',
     '!src/**/*.d.ts',
@@ -27,17 +40,14 @@ export default {
       statements: 30,
     },
   },
-  setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
+  setupFilesAfterEnv: [
+    '<rootDir>/tests/jest.setup.env.ts'
+  ],
   testTimeout: 10000,
   verbose: true,
   // Handle ES modules and path aliases
-  moduleNameMapping: {
+  moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   extensionsToTreatAsEsm: ['.ts'],
-  globals: {
-    'ts-jest': {
-      useESM: true,
-    },
-  },
 };
