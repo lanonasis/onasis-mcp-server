@@ -35,7 +35,7 @@ interface MemoryCreateParams {
   title?: string;
   type?: string;
   tags?: string[];
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -198,8 +198,9 @@ export class CLIAlignedMCPServer {
       if (user) {
         mockReq.user = {
           id: user.organization_id,
+          userId: user.organization_id,
           email: user.email,
-          organization_id: user.organization_id,
+          organizationId: user.organization_id,
           role: user.role,
           plan: user.plan
         };
@@ -468,14 +469,14 @@ export class CLIAlignedMCPServer {
     });
     
     // Protected MCP operations
-    this.httpApp.use('/mcp', CLIAuthMiddleware.authenticate as any);
-    this.httpApp.use('/mcp', CLIAuthMiddleware.enforceOrganizationIsolation as any);
+    this.httpApp.use('/mcp', CLIAuthMiddleware.authenticate as express.RequestHandler);
+    this.httpApp.use('/mcp', CLIAuthMiddleware.enforceOrganizationIsolation as express.RequestHandler);
     
     // MCP tool endpoints
-    this.httpApp.post('/mcp/tools', async (req: AuthenticatedRequest, res: Response) => {
+    this.httpApp.post('/mcp/tools', async (req: express.Request, res: express.Response) => {
       try {
         const { tool, arguments: args } = req.body;
-        
+
         // Mock call tool request
         const mockRequest = {
           params: {
@@ -483,13 +484,13 @@ export class CLIAlignedMCPServer {
             arguments: args
           }
         };
-        
+
         // Handle through existing tool handler
         const result = await this.server.request(
           { method: 'tools/call', params: mockRequest.params },
-          {} as any
+          CallToolRequestSchema
         );
-        
+
         res.json(result);
       } catch (error) {
         res.status(500).json({

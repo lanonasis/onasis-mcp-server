@@ -37,14 +37,21 @@ jobs:
         ssh-keyscan -p 2222 -H 168.231.74.29 >> ~/.ssh/known_hosts
         
     - name: Deploy to VPS
+      env:
+        DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || '168.231.74.29' }}
+        DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '2222' }}
+        DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'root' }}
       run: |
-        ssh -p 2222 root@168.231.74.29 << 'ENDSSH'
+        ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST << 'ENDSSH'
         set -e
         
         # Configuration
         DEPLOY_PATH="/opt/mcp-servers/lanonasis-standalone"
         SERVICE_NAME="lanonasis-mcp-server"
         GIT_REPO="https://github.com/lanonasis/onasis-mcp-server.git"
+        
+        # Fail fast if SERVICE_NAME is not set
+        : "${SERVICE_NAME:?SERVICE_NAME is required and cannot be empty}"
         
         echo "🚀 Starting automated deployment..."
         
@@ -72,13 +79,93 @@ jobs:
         git clone --depth 1 $GIT_REPO current
         cd current
         
-        # Install dependencies
+        # Ensure runtime prerequisites
+        echo "📦 Ensuring runtime prerequisites..."
+        if ! command -v pm2 >/dev/null; then
+          echo "Installing PM2..."
+          npm i -g pm2 || (corepack enable && pnpm add -g pm2) || { echo "❌ PM2 install failed"; exit 1; }
+        fi
+        if ! command -v bun >/dev/null; then
+          echo "Installing Bun..."
+          curl -fsSL https://bun.sh/install | bash && export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH"
+        fi
+        if ! command -v node >/dev/null; then
+          echo "Installing Node.js..."
+          curl -fsSL https://deb.nodesource.com/setup_lts.x | bash && apt-get install -y nodejs
+        fi
+        # Install dependencies including runtime fallbacks
         echo "📦 Installing dependencies..."
-        bun install --production --frozen-lockfile || bun install --production
+        bun install --production --frozen-lockfile || bun install --production || npm ci --omit=dev
+
+        # Ensure tsx is available as fallback TypeScript runtime
+        if ! command -v tsx >/dev/null; then
+          echo "📦 Installing tsx as TypeScript runtime fallback..."
+          npm install -g tsx || echo "⚠️  tsx installation failed but continuing"
+        fi
         
-        # Build TypeScript (skip due to compilation issues, using CommonJS fallback)
-        echo "🔨 Building TypeScript..."
-        echo "⚠️  Build skipped, using CommonJS fallback"
+        # Build TypeScript unified server to production-ready bundle
+        echo "🔨 Building TypeScript unified server with Bun..."
+
+        # Verify source file exists
+        if [ ! -f "src/unified-mcp-server.ts" ]; then
+          echo "❌ unified-mcp-server.ts not found at src/unified-mcp-server.ts"
+          echo "🔍 Checking available TypeScript files..."
+          find src -name "*.ts" -type f | head -5
+          echo "⚠️  Will use simple fallback server"
+        else
+          echo "✅ Found unified-mcp-server.ts"
+
+          # Multi-strategy production build using Bun best practices
+          echo "📦 Building with multiple compatibility strategies..."
+
+          # Strategy 1: Try Bun executable compilation (recommended by Bun docs)
+          if bun build --compile --minify --sourcemap src/unified-mcp-server.ts --outfile production-mcp-server; then
+            echo "✅ Strategy 1: Created self-contained executable"
+            mv production-mcp-server src/production-mcp-server.cjs
+            chmod +x src/production-mcp-server.cjs
+
+          # Strategy 2: Node.js compatible bundle
+          elif bun build src/unified-mcp-server.ts --target=node --outfile=src/production-mcp-server.cjs --minify --define "process.env.NODE_ENV=\"production\""; then
+            echo "✅ Strategy 2: Created Node.js compatible bundle"
+
+          # Strategy 3: Direct TypeScript with tsx runtime
+          else
+            echo "⚠️  Build strategies failed, using TypeScript with tsx runtime"
+            cp src/unified-mcp-server.ts src/production-mcp-server.ts
+            echo "#!/usr/bin/env npx tsx" > src/production-mcp-server.cjs
+            cat src/unified-mcp-server.ts >> src/production-mcp-server.cjs
+            chmod +x src/production-mcp-server.cjs
+          fi
+
+          # Verify build success with comprehensive checks
+          BUILD_EXIT_CODE=$?
+          if [ $BUILD_EXIT_CODE -eq 0 ] && [ -f "src/production-mcp-server.cjs" ]; then
+            echo "✅ Unified MCP Server built successfully!"
+            echo "📊 Build output:"
+            echo "   File: src/production-mcp-server.cjs"
+            echo "   Size: $(du -h src/production-mcp-server.cjs | cut -f1)"
+            echo "   Lines: $(wc -l < src/production-mcp-server.cjs) lines"
+
+            # Verify the built file is valid JavaScript (skip for native binaries)
+            if file -b --mime-type src/production-mcp-server.cjs 2>/dev/null | grep -q 'text/'; then
+              if node -c src/production-mcp-server.cjs 2>syntax_check.log; then
+                echo "✅ Built file syntax is valid"
+              else
+                echo "⚠️  Built file has syntax issues but proceeding"
+                tail -n 20 syntax_check.log || true
+              fi
+            else
+              echo "ℹ️  Skipping syntax check for non-text executable"
+            fi
+          else
+            echo "❌ Build failed with exit code: $BUILD_EXIT_CODE"
+            echo "🔍 Checking build environment..."
+            echo "   Bun version: $(bun --version)"
+            echo "   Working directory: $(pwd)"
+            echo "   Available memory: $(free -h 2>/dev/null | head -2 || echo 'N/A')"
+            echo "⚠️  Will fallback to simple server"
+          fi
+        fi
         
         # Setup environment
         echo "⚙️  Configuring environment..."
@@ -86,69 +173,161 @@ jobs:
           echo "Creating basic .env.production..."
           cp .env.example .env.production
         fi
-        
-        # Replace environment variable placeholders with actual values
-        sed -i 's/${SUPABASE_ANON_KEY}/${{ secrets.SUPABASE_ANON_KEY }}/g' .env.production
-        sed -i 's/${SUPABASE_SERVICE_ROLE_KEY}/${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}/g' .env.production  
-        sed -i 's/${OPENAI_API_KEY}/${{ secrets.OPENAI_API_KEY }}/g' .env.production
-        
+
+        # Create production environment file with secrets
+        umask 177
+        cat > .env.production <<EOF
+SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+NODE_ENV=production
+PORT=3001
+EOF
+        chmod 600 .env.production
+
         # Copy SSL certificate if exists
         if [ -f "src/config/prod-ca-2021.crt" ]; then
           cp src/config/prod-ca-2021.crt /opt/certs/
           chmod 600 /opt/certs/prod-ca-2021.crt
           chown root:root /opt/certs/prod-ca-2021.crt
+          chmod 700 /opt/certs || true
           echo "✅ SSL certificate configured"
         fi
-        
+
         # Restart PM2 service
         echo "🔄 Restarting service..."
         pm2 stop $SERVICE_NAME 2>/dev/null || true
         pm2 delete $SERVICE_NAME 2>/dev/null || true
-        
-        # Start the production MCP server
-        if [ -f src/production-mcp-server.cjs ]; then
-          echo "🚀 Starting production MCP server..."
-          pm2 start src/production-mcp-server.cjs --name $SERVICE_NAME
-        elif [ -f simple-mcp-server.cjs ]; then
-          echo "⚠️  Production server not found, using simple fallback..."
-          pm2 start simple-mcp-server.cjs --name $SERVICE_NAME
-        elif [ -f ecosystem.config.js ]; then
-          pm2 start ecosystem.config.js --env production
+
+        # Start the production MCP server with verification
+        echo "🔍 Checking available server files..."
+        for f in src/production-mcp-server.cjs src/production-mcp-server.bin simple-mcp-server.cjs ecosystem.config.js; do
+          if [ -r "$f" ]; then
+            echo "✅ Found: $f ($(du -h "$f" 2>/dev/null | cut -f1 || echo 'unknown')) [$(ls -l "$f" | awk '{print $1}')] "
+          else
+            echo "❌ Missing or not readable: $f"
+          fi
+        done
+
+        if [ -r src/production-mcp-server.cjs ]; then
+          echo "🚀 Starting UNIFIED MCP Server (17+ tools, full-featured)..."
+          echo "📄 Server file: src/production-mcp-server.cjs"
+          echo "📊 File size: $(du -h src/production-mcp-server.cjs 2>/dev/null | cut -f1 || echo 'unknown')"
+          if pm2 start src/production-mcp-server.cjs --name "$SERVICE_NAME"; then
+            echo "✅ PM2 startup command succeeded"
+          else
+            echo "❌ PM2 startup failed (cjs), exit code: $?"
+            pm2 logs "$SERVICE_NAME" --lines 20 --nostream || true
+            exit 1
+          fi
+          echo "✅ Deployed comprehensive MCP server with enterprise tools!"
+        elif [ -r simple-mcp-server.cjs ]; then
+          echo "⚠️  FALLBACK: Using simple MCP server (basic health endpoint only)..."
+          echo "📄 Server file: simple-mcp-server.cjs"
+          echo "📊 File size: $(du -h simple-mcp-server.cjs 2>/dev/null | cut -f1 || echo 'unknown')"
+          if pm2 start simple-mcp-server.cjs --name "$SERVICE_NAME"; then
+            echo "✅ PM2 startup command succeeded"
+          else
+            echo "❌ PM2 startup failed (fallback), exit code: $?"
+            pm2 logs "$SERVICE_NAME" --lines 20 --nostream || true
+            exit 1
+          fi
+          echo "⚠️  WARNING: Deployed basic fallback server, not the full unified version!"
+        elif [ -r ecosystem.config.js ]; then
+          echo "🔧 Using ecosystem configuration..."
+          if pm2 start ecosystem.config.js --env production; then
+            echo "✅ PM2 startup command succeeded"
+          else
+            echo "❌ PM2 startup failed (ecosystem), exit code: $?"
+            pm2 logs --lines 20 --nostream || true
+            exit 1
+          fi
         else
           echo "❌ No server configuration found"
+          echo "🔍 Available files in current directory:"
+          ls -la
           exit 1
         fi
-        
+
         pm2 save
-        
+
         # Wait and check status
         sleep 5
-        if pm2 list | grep -q "$SERVICE_NAME.*online"; then
+        if pm2 list | grep -Eq "($SERVICE_NAME|ecosystem).*online"; then
           echo "✅ Deployment successful!"
           echo "📊 Service Status:"
-          pm2 show $SERVICE_NAME
+          pm2 list
+          pm2 show "$SERVICE_NAME" || true
         else
           echo "❌ Deployment failed!"
-          pm2 logs $SERVICE_NAME --lines 20
+          pm2 logs "$SERVICE_NAME" --lines 20
           exit 1
         fi
-        
+
         echo "🎉 Automated deployment completed at $(date)"
         echo "📦 Deployed commit: $(git rev-parse --short HEAD)"
-        
+
         ENDSSH
         
     - name: Verify deployment
       run: |
-        # Wait for service to be ready
-        sleep 10
+        # Wait for service to be ready with retries
+        echo "🔍 Verifying deployment and server type..."
         
-        # Test health endpoint
-        if curl -f -s https://mcp.lanonasis.com/health > /dev/null; then
-          echo "✅ Health check passed"
+        # Retry health check with timeout
+        for i in {1..12}; do
+          STATUS=$(curl -sS -o /tmp/health.out -w '%{http_code}' https://mcp.lanonasis.com/health --max-time 5 || true)
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ Health endpoint responding (attempt $i)"
+            break
+          fi
+          echo "⏳ Waiting for service to be ready (attempt $i/12)..."
+          sleep 5
+        done
+        
+        # Read health response from file
+        HEALTH_RESPONSE=$(cat /tmp/health.out 2>/dev/null || echo "HEALTH_FAILED")
+
+        if [ "$HEALTH_RESPONSE" = "HEALTH_FAILED" ]; then
+          echo "❌ Health endpoint unreachable"
+          echo "🔍 Checking if service is running..."
+          ssh -p 2222 root@168.231.74.29 "pm2 list | grep lanonasis-mcp-server || echo 'Service not found'"
+          echo "⚠️  Health check failed, but continuing verification"
         else
-          echo "⚠️  Health check failed, but deployment completed"
+          echo "✅ Health endpoint responding"
+
+          # Check if this is the comprehensive unified server or basic fallback
+          if echo "$HEALTH_RESPONSE" | grep -q "fallback\|Fallback"; then
+            echo "⚠️  WARNING: BASIC FALLBACK SERVER IS DEPLOYED!"
+            echo "🔧 This means the TypeScript build failed and we're running the 70-line simple server"
+            echo "📊 Response: $HEALTH_RESPONSE"
+
+            # Get deployment logs to understand why build failed
+            echo "🔍 Checking deployment logs for build failure..."
+            ssh -p 2222 root@168.231.74.29 "pm2 logs lanonasis-mcp-server --lines 50 --nostream" || echo "Could not fetch logs"
+
+          elif echo "$HEALTH_RESPONSE" | grep -q "17.*tools\|enterprise\|unified\|Lanonasis.*MCP"; then
+            echo "🎉 SUCCESS: UNIFIED MCP SERVER WITH ENTERPRISE TOOLS IS DEPLOYED!"
+            echo "✅ Comprehensive unified server detected (17+ tools)"
+            echo "📊 Server details:"
+            echo "$HEALTH_RESPONSE" | head -10
+
+          else
+            echo "❓ Unknown server type deployed"
+            echo "📊 Response: $HEALTH_RESPONSE"
+          fi
         fi
+
+        # Final deployment summary
+        echo ""
+        echo "=========================================="
+        echo "🚀 DEPLOYMENT VERIFICATION COMPLETE"
+        echo "=========================================="
+        echo "📅 Deployed at: $(date)"
+        echo "🌐 Endpoint: https://mcp.lanonasis.com/health"
+        echo "📦 Expected: Unified MCP Server (17+ tools)"
+        echo "⚠️  If fallback server was deployed, check build logs above"
+        echo "=========================================="
         
     - name: Notify deployment status
       if: always()

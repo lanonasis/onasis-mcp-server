@@ -18,6 +18,14 @@ const mockSupabase = {
 };
 
 jest.mock('../../../src/config/environment', () => ({
+  config: {
+    LOG_FORMAT: 'simple',
+    LOG_LEVEL: 'error',
+    NODE_ENV: 'test',
+    SUPABASE_URL: 'https://test.supabase.co',
+    SUPABASE_SERVICE_KEY: 'test-service-key',
+    JWT_SECRET: 'test-jwt-secret',
+  },
   getSupabaseClient: () => mockSupabase,
 }));
 

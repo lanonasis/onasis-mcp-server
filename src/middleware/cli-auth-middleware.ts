@@ -1,15 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { cliAuthConfig } from '../config/cli-auth.js';
+import { UnifiedUser, buildUnifiedUser } from '../types/unified-user.js';
 import axios from 'axios';
 
 interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string;
-    email: string;
-    organization_id: string;
-    role: string;
-    plan: string;
-  };
+  user?: UnifiedUser;
   vendorKey?: string;
   organizationId?: string;
 }
@@ -70,13 +65,13 @@ export class CLIAuthMiddleware {
         if (isAuthenticated) {
           const user = await cliAuthConfig.getCurrentUser();
           if (user) {
-            req.user = {
+            req.user = buildUnifiedUser({
               id: user.organization_id, // Using org ID as user ID for now
-              email: user.email,
               organization_id: user.organization_id,
+              email: user.email,
               role: user.role,
               plan: user.plan
-            };
+            });
             req.organizationId = user.organization_id;
             return next();
           }
@@ -136,7 +131,10 @@ export class CLIAuthMiddleware {
       headers['X-Vendor-Key'] = req.vendorKey;
     }
     if (req.user) {
-      headers['X-Organization-ID'] = req.user.organization_id;
+      headers['X-Organization-ID'] = req.user.organizationId;
+    } else if (req.organizationId) {
+      // Ensure vendorKey auth gets organization header too
+      headers['X-Organization-ID'] = req.organizationId;
     }
 
     return axios.create({
@@ -234,4 +232,4 @@ export class CLIAuthMiddleware {
   }
 }
 
-export { AuthenticatedRequest };
+export type { AuthenticatedRequest };

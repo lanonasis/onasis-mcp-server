@@ -12,24 +12,8 @@ jest.mock('bcryptjs', () => ({
   hash: jest.fn().mockResolvedValue('hashed-password'),
 }));
 
-// Mock Supabase
-const mockSupabase = {
-  from: jest.fn(() => ({
-    select: jest.fn(() => ({
-      eq: jest.fn(() => ({
-        single: jest.fn(),
-      })),
-    })),
-    insert: jest.fn(() => ({
-      select: jest.fn(() => ({
-        single: jest.fn(),
-      })),
-    })),
-    upsert: jest.fn(),
-  })),
-  rpc: jest.fn(),
-};
-
+// Mock Supabase (defer initialization to avoid TDZ under ESM/jest)
+let mockSupabase: any;
 jest.mock('@supabase/supabase-js', () => ({
   createClient: jest.fn(() => mockSupabase),
 }));
@@ -39,6 +23,23 @@ describe('Emergency Admin Routes', () => {
   const TEST_EMERGENCY_TOKEN = 'test-emergency-token';
 
   beforeEach(() => {
+    // Initialize Supabase mock per test
+    mockSupabase = {
+      from: jest.fn(() => ({
+        select: jest.fn(() => ({
+          eq: jest.fn(() => ({
+            single: jest.fn(),
+          })),
+        })),
+        insert: jest.fn(() => ({
+          select: jest.fn(() => ({
+            single: jest.fn(),
+          })),
+        })),
+        upsert: jest.fn(),
+      })),
+      rpc: jest.fn(),
+    };
     app = express();
     app.use(express.json());
     app.use('/api/v1', emergencyRouter);
