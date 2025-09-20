@@ -22,7 +22,15 @@ jobs:
       run: bun install --frozen-lockfile
       
     - name: Build TypeScript
-      run: echo "TypeScript build skipped due to compilation issues" || true
+      run: |
+        echo "🔨 Building TypeScript..."
+        if bun run build; then
+          echo "✅ Build successful"
+          echo "BUILD_SUCCESS=true" >> $GITHUB_ENV
+        else
+          echo "❌ Build failed, will use fallback"
+          echo "BUILD_SUCCESS=false" >> $GITHUB_ENV
+        fi
       
     - name: Run tests
       run: bun test || echo "Tests not configured yet"
@@ -103,68 +111,21 @@ jobs:
           npm install -g tsx || echo "⚠️  tsx installation failed but continuing"
         fi
         
-        # Build TypeScript unified server to production-ready bundle
-        echo "🔨 Building TypeScript unified server with Bun..."
-
-        # Verify source file exists
-        if [ ! -f "src/unified-mcp-server.ts" ]; then
-          echo "❌ unified-mcp-server.ts not found at src/unified-mcp-server.ts"
-          echo "🔍 Checking available TypeScript files..."
-          find src -name "*.ts" -type f | head -5
-          echo "⚠️  Will use simple fallback server"
+        # Build TypeScript using the standard build process
+        echo "🔨 Building TypeScript with standard build process..."
+        
+        if [ -f "tsconfig.build.json" ]; then
+          echo "📦 Using tsconfig.build.json for production build..."
+          if bun run build; then
+            echo "✅ TypeScript build successful"
+            echo "📁 Build output:"
+            ls -la dist/ || echo "No dist directory found"
+          else
+            echo "❌ TypeScript build failed"
+            echo "⚠️  Will use existing files if available"
+          fi
         else
-          echo "✅ Found unified-mcp-server.ts"
-
-          # Multi-strategy production build using Bun best practices
-          echo "📦 Building with multiple compatibility strategies..."
-
-          # Strategy 1: Try Bun executable compilation (recommended by Bun docs)
-          if bun build --compile --minify --sourcemap src/unified-mcp-server.ts --outfile production-mcp-server; then
-            echo "✅ Strategy 1: Created self-contained executable"
-            mv production-mcp-server src/production-mcp-server.cjs
-            chmod +x src/production-mcp-server.cjs
-
-          # Strategy 2: Node.js compatible bundle
-          elif bun build src/unified-mcp-server.ts --target=node --outfile=src/production-mcp-server.cjs --minify --define "process.env.NODE_ENV=\"production\""; then
-            echo "✅ Strategy 2: Created Node.js compatible bundle"
-
-          # Strategy 3: Direct TypeScript with tsx runtime
-          else
-            echo "⚠️  Build strategies failed, using TypeScript with tsx runtime"
-            cp src/unified-mcp-server.ts src/production-mcp-server.ts
-            echo "#!/usr/bin/env npx tsx" > src/production-mcp-server.cjs
-            cat src/unified-mcp-server.ts >> src/production-mcp-server.cjs
-            chmod +x src/production-mcp-server.cjs
-          fi
-
-          # Verify build success with comprehensive checks
-          BUILD_EXIT_CODE=$?
-          if [ $BUILD_EXIT_CODE -eq 0 ] && [ -f "src/production-mcp-server.cjs" ]; then
-            echo "✅ Unified MCP Server built successfully!"
-            echo "📊 Build output:"
-            echo "   File: src/production-mcp-server.cjs"
-            echo "   Size: $(du -h src/production-mcp-server.cjs | cut -f1)"
-            echo "   Lines: $(wc -l < src/production-mcp-server.cjs) lines"
-
-            # Verify the built file is valid JavaScript (skip for native binaries)
-            if file -b --mime-type src/production-mcp-server.cjs 2>/dev/null | grep -q 'text/'; then
-              if node -c src/production-mcp-server.cjs 2>syntax_check.log; then
-                echo "✅ Built file syntax is valid"
-              else
-                echo "⚠️  Built file has syntax issues but proceeding"
-                tail -n 20 syntax_check.log || true
-              fi
-            else
-              echo "ℹ️  Skipping syntax check for non-text executable"
-            fi
-          else
-            echo "❌ Build failed with exit code: $BUILD_EXIT_CODE"
-            echo "🔍 Checking build environment..."
-            echo "   Bun version: $(bun --version)"
-            echo "   Working directory: $(pwd)"
-            echo "   Available memory: $(free -h 2>/dev/null | head -2 || echo 'N/A')"
-            echo "⚠️  Will fallback to simple server"
-          fi
+          echo "⚠️  No tsconfig.build.json found, using existing files"
         fi
         
         # Setup environment
@@ -194,56 +155,25 @@ EOF
           echo "✅ SSL certificate configured"
         fi
 
-        # Restart PM2 service
+        # Restart PM2 service using ecosystem configuration
         echo "🔄 Restarting service..."
         pm2 stop $SERVICE_NAME 2>/dev/null || true
         pm2 delete $SERVICE_NAME 2>/dev/null || true
 
-        # Start the production MCP server with verification
-        echo "🔍 Checking available server files..."
-        for f in src/production-mcp-server.cjs src/production-mcp-server.bin simple-mcp-server.cjs ecosystem.config.js; do
-          if [ -r "$f" ]; then
-            echo "✅ Found: $f ($(du -h "$f" 2>/dev/null | cut -f1 || echo 'unknown')) [$(ls -l "$f" | awk '{print $1}')] "
-          else
-            echo "❌ Missing or not readable: $f"
-          fi
-        done
-
-        if [ -r src/production-mcp-server.cjs ]; then
-          echo "🚀 Starting UNIFIED MCP Server (17+ tools, full-featured)..."
-          echo "📄 Server file: src/production-mcp-server.cjs"
-          echo "📊 File size: $(du -h src/production-mcp-server.cjs 2>/dev/null | cut -f1 || echo 'unknown')"
-          if pm2 start src/production-mcp-server.cjs --name "$SERVICE_NAME"; then
-            echo "✅ PM2 startup command succeeded"
-          else
-            echo "❌ PM2 startup failed (cjs), exit code: $?"
-            pm2 logs "$SERVICE_NAME" --lines 20 --nostream || true
-            exit 1
-          fi
-          echo "✅ Deployed comprehensive MCP server with enterprise tools!"
-        elif [ -r simple-mcp-server.cjs ]; then
-          echo "⚠️  FALLBACK: Using simple MCP server (basic health endpoint only)..."
-          echo "📄 Server file: simple-mcp-server.cjs"
-          echo "📊 File size: $(du -h simple-mcp-server.cjs 2>/dev/null | cut -f1 || echo 'unknown')"
-          if pm2 start simple-mcp-server.cjs --name "$SERVICE_NAME"; then
-            echo "✅ PM2 startup command succeeded"
-          else
-            echo "❌ PM2 startup failed (fallback), exit code: $?"
-            pm2 logs "$SERVICE_NAME" --lines 20 --nostream || true
-            exit 1
-          fi
-          echo "⚠️  WARNING: Deployed basic fallback server, not the full unified version!"
-        elif [ -r ecosystem.config.js ]; then
-          echo "🔧 Using ecosystem configuration..."
+        # Start the MCP server using ecosystem configuration
+        echo "🚀 Starting MCP Server using ecosystem configuration..."
+        if [ -f "ecosystem.config.js" ]; then
+          echo "📄 Using ecosystem.config.js"
           if pm2 start ecosystem.config.js --env production; then
             echo "✅ PM2 startup command succeeded"
+            echo "✅ Deployed MCP server with ecosystem configuration!"
           else
             echo "❌ PM2 startup failed (ecosystem), exit code: $?"
             pm2 logs --lines 20 --nostream || true
             exit 1
           fi
         else
-          echo "❌ No server configuration found"
+          echo "❌ ecosystem.config.js not found"
           echo "🔍 Available files in current directory:"
           ls -la
           exit 1
@@ -276,7 +206,7 @@ EOF
         
         # Retry health check with timeout
         for i in {1..12}; do
-          STATUS=$(curl -sS -o /tmp/health.out -w '%{http_code}' https://mcp.lanonasis.com/health --max-time 5 || true)
+          STATUS=$(curl -sS -o /tmp/health.out -w '%{http_code}' http://${{ secrets.VPS_HOST }}:3001/health --max-time 5 || true)
           if [ "$STATUS" = "200" ]; then
             echo "✅ Health endpoint responding (attempt $i)"
             break
