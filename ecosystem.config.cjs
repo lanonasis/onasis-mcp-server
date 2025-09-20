@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: 'lanonasis-mcp-server',
-      script: './dist/unified-mcp-server.js',
+      script: 'dist/unified-mcp-server.js',
       args: '--http',
       instances: 1,
       autorestart: true,
@@ -60,7 +60,7 @@ module.exports = {
     },
     {
       name: 'lanonasis-mcp-stdio',
-      script: './dist/unified-mcp-server.js',
+      script: 'dist/unified-mcp-server.js',
       args: '--stdio',
       instances: 1,
       autorestart: true,
