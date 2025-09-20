@@ -2,7 +2,7 @@ name: Deploy to VPS (Improved)
 
 on:
   push:
-    branches: [ main, deploy-setup ]
+    branches: [ main, deploy-setup, fix/deployment-workflow ]
   workflow_dispatch:
 
 jobs:
