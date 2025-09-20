@@ -38,6 +38,7 @@ trap cleanup_tunnel EXIT
 
 # Replace fixed sleep with a readiness probe against the tunneled service
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-15}"
+LOCAL_PORT="${LOCAL_PORT:-3001}"
 log_info "Waiting for tunnel readiness on localhost:${LOCAL_PORT} (timeout: ${WAIT_TIMEOUT}s)..."
 for i in $(seq 1 "$WAIT_TIMEOUT"); do
   if curl -sSf "http://localhost:${LOCAL_PORT}/health" >/dev/null 2>&1; then

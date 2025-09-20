@@ -5,19 +5,8 @@
  * Creates SSH tunnel and provides MCP protocol interface to remote server
  */
 
-// src/tunnel-mcp-client.cjs
-
-// … (other requires)
-
 const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
-
-// … (rest of file)
-
-// around line 20
-this.server = new Server({
-  // existing configuration options
-});
 const { spawn } = require('child_process');
 const { promisify } = require('util');
 
@@ -28,7 +17,7 @@ class TunnelMCPClient {
     this.tunnelProcess = null;
     this.baseUrl = `http://localhost:${this.tunnelPort}`;
     
-    this.server = new McpServer({
+    this.server = new Server({
       name: 'lanonasis-tunnel-mcp',
       version: '1.0.0',
     });
