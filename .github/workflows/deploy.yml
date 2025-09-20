@@ -137,13 +137,17 @@ jobs:
 
         # Create production environment file with secrets
         umask 177
-        cat > .env.production <<EOF
-SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
-SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-NODE_ENV=production
-PORT=3001
-EOF
+        echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" > .env.production
+        echo "SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" >> .env.production
+        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env.production
+        echo "NODE_ENV=production" >> .env.production
+        echo "PORT=3001" >> .env.production
+        echo "MCP_WS_PORT=3002" >> .env.production
+        echo "MCP_SSE_PORT=3003" >> .env.production
+        echo "ENABLE_HTTP=true" >> .env.production
+        echo "ENABLE_WEBSOCKET=true" >> .env.production
+        echo "ENABLE_SSE=true" >> .env.production
+        echo "ENABLE_STDIO=false" >> .env.production
         chmod 600 .env.production
 
         # Copy SSL certificate if exists
