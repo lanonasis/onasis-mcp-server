@@ -17,7 +17,8 @@ log_info() { echo -e "${BLUE}ℹ️  $1${NC}"; }
 log_success() { echo -e "${GREEN}✅ $1${NC}"; }
 log_error() { echo -e "${RED}❌ $1${NC}"; }
 
-cd /Users/seyederick/DevOps/_project_folders/onasis-mcp-standalone
+# Change to project root dynamically based on script location
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 echo ""
 log_info "Testing Tunnel MCP Client startup..."
@@ -51,7 +52,7 @@ const fs = require('fs');
 async function testMCPCapabilities() {
     console.log('🧪 Testing MCP Production Server Capabilities\n');
     
-    const serverPath = '/Users/seyederick/DevOps/_project_folders/onasis-mcp-standalone/src/production-mcp-server.cjs';
+    const serverPath = path.resolve('src/production-mcp-server.cjs');
     
     if (fs.existsSync(serverPath)) {
         console.log('✅ Production server file exists');

@@ -5,7 +5,7 @@
  * Creates SSH tunnel and provides MCP protocol interface to remote server
  */
 
-const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
+const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { spawn } = require('child_process');
 const { promisify } = require('util');
@@ -17,7 +17,7 @@ class TunnelMCPClient {
     this.tunnelProcess = null;
     this.baseUrl = `http://localhost:${this.tunnelPort}`;
     
-    this.server = new McpServer({
+    this.server = new Server({
       name: 'lanonasis-tunnel-mcp',
       version: '1.0.0',
     });
@@ -31,6 +31,9 @@ class TunnelMCPClient {
     console.error(`Creating SSH tunnel: ${this.vpsHost}:3001 → localhost:${this.tunnelPort}`);
     
     this.tunnelProcess = spawn('ssh', [
+      '-o', 'ConnectTimeout=10',
+      '-o', 'ServerAliveInterval=30',
+      '-o', 'ServerAliveCountMax=3',
       '-N', 
       '-L', `${this.tunnelPort}:localhost:3001`, 
       this.vpsHost
@@ -56,63 +59,52 @@ class TunnelMCPClient {
   }
 
   async makeHttpRequest(method, path, data = null) {
-    // Simple HTTP client using curl since we can't rely on axios being available
-    return new Promise((resolve, reject) => {
-      const curlArgs = [
-        '-s',
-        '--connect-timeout', '5',
-        '--max-time', '10',
-        '-X', method.toUpperCase()
-      ];
-
-      if (data) {
-        curlArgs.push('-H', 'Content-Type: application/json');
-        curlArgs.push('-d', JSON.stringify(data));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const res = await fetch(`${this.baseUrl}${path}`, {
+        method: method.toUpperCase(),
+        headers: data ? { 'Content-Type': 'application/json' } : undefined,
+        body: data ? JSON.stringify(data) : undefined,
+        signal: controller.signal
+      });
+      const text = await res.text();
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}: ${text}`);
+      try {
+        return JSON.parse(text);
+      } catch {
+        return { raw: text };
       }
-
-      curlArgs.push(`${this.baseUrl}${path}`);
-
-      const curl = spawn('curl', curlArgs, {
-        stdio: ['ignore', 'pipe', 'pipe']
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      curl.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      curl.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      curl.on('close', (code) => {
-        if (code === 0) {
-          try {
-            resolve(JSON.parse(stdout));
-          } catch (e) {
-            resolve({ raw: stdout });
-          }
-        } else {
-          reject(new Error(`HTTP request failed: ${stderr || stdout}`));
-        }
-      });
-    });
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   setupTools() {
     const z = require('zod');
     
-    // Wait for tunnel to establish, then register tools
-    setTimeout(async () => {
-      try {
-        const response = await this.makeHttpRequest('GET', '/api/tools');
-        console.error(`Discovered ${response.tools?.length || 0} remote tools`);
-      } catch (error) {
-        console.error(`Failed to discover remote tools: ${error.message}`);
-      }
-    }, 2000);
+    // Wait for tunnel to establish, then register tools with retry and configurable timeout
+    const initialTimeout = parseInt(process.env.TOOL_DISCOVERY_TIMEOUT_MS, 10) || 2000;
+    const maxRetries = 5;
+    const backoffFactor = 2;
+
+    const discoverToolsWithRetry = async (attempt = 1, delay = initialTimeout) => {
+      setTimeout(async () => {
+        try {
+          const response = await this.makeHttpRequest('GET', '/api/tools');
+          console.error(`Discovered ${response.tools?.length || 0} remote tools`);
+        } catch (error) {
+          if (attempt < maxRetries) {
+            console.error(`Tool discovery attempt ${attempt} failed: ${error.message}. Retrying in ${delay * backoffFactor}ms...`);
+            discoverToolsWithRetry(attempt + 1, delay * backoffFactor);
+          } else {
+            console.error(`Failed to discover remote tools after ${maxRetries} attempts: ${error.message}`);
+          }
+        }
+      }, delay);
+    };
+
+    discoverToolsWithRetry();
     
     // Health check tool
     this.server.registerTool('health_check', {
@@ -195,10 +187,10 @@ Connection: ${this.baseUrl} → ${this.vpsHost}:3001`
     // Search memories tool
     this.server.registerTool('search_memories', {
       description: 'Search stored memories on the remote server',
-      inputSchema: {
+      inputSchema: z.object({
         query: z.string().describe('The search query'),
         limit: z.number().optional().describe('Maximum number of results')
-      },
+      }),
     }, async ({ query, limit }) => {
       try {
         const result = await this.makeHttpRequest('POST', '/api/execute/search_memories', {
