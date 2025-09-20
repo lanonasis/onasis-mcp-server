@@ -76,6 +76,28 @@ jobs:
           echo "📦 Installing dependencies..."
           bun install --production
           
+          # Create production environment file
+          echo "⚙️  Creating production environment..."
+          cat > .env.production <<EOF
+SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+NODE_ENV=production
+PORT=3001
+MCP_WS_PORT=3002
+MCP_SSE_PORT=3003
+ENABLE_HTTP=true
+ENABLE_WEBSOCKET=true
+ENABLE_SSE=true
+ENABLE_STDIO=false
+EOF
+          chmod 600 .env.production
+          
+          # Stop existing service
+          echo "🔄 Stopping existing service..."
+          pm2 stop lanonasis-mcp-server 2>/dev/null || true
+          pm2 delete lanonasis-mcp-server 2>/dev/null || true
+          
           # Start/restart the service using ecosystem.config.js
           echo "🔄 Starting MCP server..."
           if [ -f "ecosystem.config.js" ]; then
