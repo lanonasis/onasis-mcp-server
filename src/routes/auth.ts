@@ -387,4 +387,53 @@ router.post('/refresh', asyncHandler(async (req: Request, res: Response) => {
   }
 }));
 
+/**
+ * @swagger
+ * /auth/health:
+ *   get:
+ *     summary: Auth service health check endpoint
+ *     description: Returns the health status of the authentication service
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: Auth service is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ok
+ *                 service:
+ *                   type: string
+ *                   example: Lanonasis MCP Auth Service
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ */
+router.get('/health', (req: Request, res: Response) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'Lanonasis MCP Auth Service',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    auth_status: 'available',
+    login_methods: ['password', 'api_key', 'oauth'],
+    capabilities: [
+      'user_authentication',
+      'session_management',
+      'oauth_callback',
+      'profile_management',
+      'password_reset'
+    ],
+    endpoints: {
+      login: '/auth/login',
+      signup: '/auth/signup',
+      callback: '/auth/callback',
+      health: '/auth/health'
+    }
+  });
+});
+
 export default router;
