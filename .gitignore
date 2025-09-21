@@ -137,3 +137,28 @@ Thumbs.db
 *.key
 *.crt
 !src/config/prod-ca-2021.crt
+
+# CRITICAL SECURITY: Supabase API Keys and Secrets (NEVER COMMIT)
+.env.production.fixed
+.env.production
+*supabase*key*
+*service*role*
+*anon*key*
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9*
+SUPABASE_*
+JWT_SECRET*
+*jwt*secret*
+
+# API Keys and Tokens
+*API_KEY*
+*api*key*
+sk-*
+onasis_*
+*_token*
+*_secret*
+
+# Backup files with sensitive data
+backup-pm2-dump.json
+backup-onasis-gateway-core/
+*.backup
+*.bak
