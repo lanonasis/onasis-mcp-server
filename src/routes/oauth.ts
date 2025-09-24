@@ -7,13 +7,36 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
+import Redis from 'ioredis';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
+
+// Initialize Redis client for persistent storage
+const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+  retryDelayOnFailover: 100,
+  enableReadyCheck: false,
+  maxRetriesPerRequest: null,
+});
+
+// Handle Redis connection events
+redis.on('connect', () => {
+  logger.info('Redis connected for OAuth storage');
+});
+
+redis.on('error', (err: Error) => {
+  logger.error('Redis connection error:', err);
+});
+
+// Validate required environment variables
+if (!process.env.OAUTH_CLIENT_SECRET) {
+  throw new Error('OAUTH_CLIENT_SECRET environment variable is required but not set');
+}
 
 // OAuth configuration
 const OAUTH_CONFIG = {
   clientId: process.env.OAUTH_CLIENT_ID || 'lanonasis_mcp_client_2024',
-  clientSecret: process.env.OAUTH_CLIENT_SECRET || 'lmcp_secret_prod_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6',
+  clientSecret: process.env.OAUTH_CLIENT_SECRET,
   redirectUri: process.env.OAUTH_REDIRECT_URI || 'https://dashboard.lanonasis.com/auth/oauth/callback',
   scope: process.env.OAUTH_SCOPE || 'memory:read memory:write api:access mcp:connect',
   authorizationEndpoint: '/oauth/authorize',
@@ -26,8 +49,8 @@ const OAUTH_CONFIG = {
   } as Record<string, { redirectUris: string[] }>
 };
 
-// In-memory store for authorization codes (use Redis in production)
-const authorizationCodes = new Map<string, {
+// Authorization code data interface
+interface AuthCodeData {
   clientId: string;
   redirectUri: string;
   scope: string;
@@ -35,13 +58,60 @@ const authorizationCodes = new Map<string, {
   codeChallengeMethod?: string;
   userId?: string;
   expiresAt: number;
-}>();
+}
+
+// Redis-based authorization code storage
+class AuthCodeStore {
+  private static readonly PREFIX = 'oauth:authcode:';
+  private static readonly TTL = 600; // 10 minutes in seconds
+
+  static async store(code: string, data: AuthCodeData): Promise<void> {
+    try {
+      const key = this.PREFIX + code;
+      const serializedData = JSON.stringify(data);
+      await redis.setex(key, this.TTL, serializedData);
+      logger.debug('Authorization code stored in Redis', { code: code.substring(0, 8) + '...' });
+    } catch (error) {
+      logger.error('Failed to store authorization code in Redis:', error);
+      throw new Error('Failed to store authorization code');
+    }
+  }
+
+  static async retrieve(code: string): Promise<AuthCodeData | null> {
+    try {
+      const key = this.PREFIX + code;
+      const serializedData = await redis.get(key);
+      
+      if (!serializedData) {
+        return null;
+      }
+
+      const data: AuthCodeData = JSON.parse(serializedData);
+      logger.debug('Authorization code retrieved from Redis', { code: code.substring(0, 8) + '...' });
+      return data;
+    } catch (error) {
+      logger.error('Failed to retrieve authorization code from Redis:', error);
+      return null;
+    }
+  }
+
+  static async delete(code: string): Promise<void> {
+    try {
+      const key = this.PREFIX + code;
+      await redis.del(key);
+      logger.debug('Authorization code deleted from Redis', { code: code.substring(0, 8) + '...' });
+    } catch (error) {
+      logger.error('Failed to delete authorization code from Redis:', error);
+      // Don't throw here as this is cleanup
+    }
+  }
+}
 
 /**
  * OAuth Authorization Endpoint
  * GET /oauth/authorize
  */
-router.get('/authorize', (req, res) => {
+router.get('/authorize', async (req, res) => {
   const schema = z.object({
     client_id: z.string(),
     redirect_uri: z.string().url(),
@@ -93,15 +163,23 @@ router.get('/authorize', (req, res) => {
   // Generate authorization code
   const authCode = crypto.randomBytes(32).toString('base64url');
   
-  // Store authorization code
-  authorizationCodes.set(authCode, {
-    clientId: client_id,
-    redirectUri: redirect_uri,
-    scope,
-    ...(code_challenge && { codeChallenge: code_challenge }),
-    ...(code_challenge_method && { codeChallengeMethod: code_challenge_method }),
-    expiresAt: Date.now() + 10 * 60 * 1000 // 10 minutes
-  });
+  // Store authorization code in Redis
+  try {
+    await AuthCodeStore.store(authCode, {
+      clientId: client_id,
+      redirectUri: redirect_uri,
+      scope,
+      ...(code_challenge && { codeChallenge: code_challenge }),
+      ...(code_challenge_method && { codeChallengeMethod: code_challenge_method }),
+      expiresAt: Date.now() + 10 * 60 * 1000 // 10 minutes
+    });
+  } catch (error) {
+    logger.error('Failed to store authorization code:', error);
+    return res.status(500).json({
+      error: 'server_error',
+      error_description: 'Failed to process authorization request'
+    });
+  }
 
   // Redirect to auth page with authorization code
   const params = new URLSearchParams({
@@ -166,8 +244,8 @@ router.post('/token', async (req, res) => {
     });
   }
 
-  // Retrieve and validate authorization code
-  const codeData = authorizationCodes.get(code);
+  // Retrieve and validate authorization code from Redis
+  const codeData = await AuthCodeStore.retrieve(code);
   if (!codeData) {
     return res.status(400).json({
       error: 'invalid_grant',
@@ -177,7 +255,7 @@ router.post('/token', async (req, res) => {
 
   // Check if code is expired
   if (Date.now() > codeData.expiresAt) {
-    authorizationCodes.delete(code);
+    await AuthCodeStore.delete(code);
     return res.status(400).json({
       error: 'invalid_grant',
       error_description: 'Authorization code has expired'
@@ -214,11 +292,17 @@ router.post('/token', async (req, res) => {
     }
   }
 
-  // Clean up authorization code
-  authorizationCodes.delete(code);
+  // Clean up authorization code from Redis
+  await AuthCodeStore.delete(code);
 
   // Generate access token
-  const jwtSecret = process.env.JWT_SECRET || 'fallback-secret-key';
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return res.status(500).json({
+      error: 'server_error',
+      error_description: 'Server configuration error'
+    });
+  }
   const accessToken = jwt.sign(
     {
       client_id,
