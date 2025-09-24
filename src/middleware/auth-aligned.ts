@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
+import rateLimit from 'express-rate-limit';
+import bcrypt from 'bcryptjs';
 import { config } from '@/config/environment';
 import { logger } from '@/utils/logger';
 
@@ -59,38 +61,49 @@ export const alignedAuthMiddleware = async (
         req.user = user;
       } else {
         // Handle JWT token authentication with Supabase
-        // For now, skip JWT validation and proceed with basic auth
-        // TODO: Implement proper JWT validation with Supabase v2
-        const user = { 
-          id: 'jwt-user',
-          email: 'jwt-user@example.com',
-          user_metadata: {},
-          app_metadata: {}
-        };
+        const token = authHeader.replace('Bearer ', '');
+        
+        try {
+          // Validate JWT token with Supabase
+          const { data: { user }, error } = await supabase.auth.getUser(token);
+          
+          if (error || !user) {
+            return res.status(401).json({
+              error: 'Invalid or expired token',
+              message: 'JWT validation failed'
+            });
+          }
 
-        // Get user plan from service config (using hardcoded user for now)
-        const { data: serviceConfig } = await supabase
-          .from('maas_service_config')
-          .select('plan')
-          .eq('user_id', user.id)
-          .single();
+          // Get user plan from service config
+          const { data: serviceConfig, error: configError } = await supabase
+            .from('maas_service_config')
+            .select('plan')
+            .eq('user_id', user.id)
+            .single();
 
-        const alignedUser: UnifiedUser = {
-          // JWTPayload properties (from Supabase user)
-          userId: user.id,
-          organizationId: user.id, // For Supabase, use user ID as org ID
-          role: 'user',
-          plan: (serviceConfig && Array.isArray(serviceConfig) && serviceConfig.length > 0) 
-            ? serviceConfig[0].plan 
-            : 'free',
-          // Additional UnifiedUser properties
-          id: user.id,
-          email: user.email || '',
-          user_metadata: user.user_metadata || {},
-          app_metadata: user.app_metadata || {}
-        };
+          // Fix serviceConfig handling - .single() returns an object, not an array
+          const plan = serviceConfig?.plan || 'free';
 
-        req.user = alignedUser;
+          const alignedUser: UnifiedUser = {
+            // JWTPayload properties (from Supabase user)
+            userId: user.id,
+            organizationId: user.id, // For Supabase, use user ID as org ID
+            role: 'user',
+            plan: plan,
+            // Additional UnifiedUser properties
+            id: user.id,
+            email: user.email || '',
+            user_metadata: user.user_metadata || {},
+            app_metadata: user.app_metadata || {}
+          };
+
+          req.user = alignedUser;
+        } catch (jwtError) {
+          return res.status(401).json({
+            error: 'JWT validation failed',
+            message: 'Unable to validate authentication token'
+          });
+        }
       }
 
       logger.debug('User authenticated', {
@@ -127,20 +140,30 @@ export const alignedAuthMiddleware = async (
  */
 async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
   try {
-    // Hash the API key for comparison (in production, store hashed keys)
+    // Hash the API key for secure comparison
+    const hashedApiKey = await bcrypt.hash(apiKey, 10);
+    
+    // In production, you would compare against stored hashed keys
+    // For now, we'll query by the hashed key (assuming keys are stored hashed)
     const { data: keyRecord, error } = await supabase
       .from('maas_api_keys')
       .select(`
         user_id,
         is_active,
         expires_at,
+        key_hash,
         maas_service_config!inner(plan)
       `)
-      .eq('key_hash', apiKey) // In production, hash the key
       .eq('is_active', true)
       .single();
 
     if (error || !keyRecord) {
+      return null;
+    }
+
+    // Compare the hashed API key with stored hash
+    const isValidKey = await bcrypt.compare(apiKey, keyRecord.key_hash);
+    if (!isValidKey) {
       return null;
     }
 
@@ -149,11 +172,11 @@ async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
       return null;
     }
 
-    // Update last_used timestamp
+    // Update last_used timestamp using the hashed key
     await supabase
       .from('maas_api_keys')
       .update({ last_used: new Date().toISOString() })
-      .eq('key_hash', apiKey);
+      .eq('key_hash', keyRecord.key_hash);
 
     // Extract plan value to avoid TypeScript errors
     let plan = 'free';
@@ -238,7 +261,7 @@ export const requireAdmin = (req: Request, res: Response, next: NextFunction): v
 };
 
 /**
- * Rate limiting based on user plan
+ * Rate limiting based on user plan with actual enforcement
  */
 export const planBasedRateLimit = () => {
   const limits: Record<string, { requests: number; window: number }> = {
@@ -247,28 +270,40 @@ export const planBasedRateLimit = () => {
     enterprise: { requests: 1000, window: 60000 } // 1000 requests per minute
   };
 
+  // Create rate limiters for each plan
+  const limiters: Record<string, any> = {};
+  
+  Object.keys(limits).forEach(plan => {
+    limiters[plan] = rateLimit({
+      windowMs: limits[plan].window,
+      max: limits[plan].requests,
+      message: {
+        error: `Rate limit exceeded for ${plan} plan`,
+        limit: limits[plan].requests,
+        window: limits[plan].window,
+        retryAfter: Math.ceil(limits[plan].window / 1000)
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => {
+        // Use user ID for rate limiting if available, otherwise IP
+        return req.user?.userId || req.ip || 'unknown';
+      }
+    });
+  });
+
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user) {
-      next();
+      // Apply default rate limiting for unauthenticated users
+      limiters.free(req, res, next);
       return;
     }
 
     const userPlan = req.user?.plan || 'free';
-    const limit = limits[userPlan] || limits.free;
-
-    // Here you would implement the actual rate limiting logic
-    // This is a simplified version - in production, use Redis or similar
+    const limiter = limiters[userPlan] || limiters.free;
     
-    // For now, just add the limit info to headers
-    if (limit) {
-      res.set({
-        'X-RateLimit-Limit': limit.requests.toString(),
-        'X-RateLimit-Window': limit.window.toString(),
-        'X-RateLimit-Plan': userPlan
-      });
-    }
-
-    next();
+    // Apply the appropriate rate limiter
+    limiter(req, res, next);
   };
 };
 
