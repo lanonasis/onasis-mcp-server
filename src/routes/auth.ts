@@ -387,4 +387,64 @@ router.post('/refresh', asyncHandler(async (req: Request, res: Response) => {
   }
 }));
 
+/**
+ * @swagger
+ * /auth/health:
+ *   get:
+ *     summary: Auth service health check endpoint
+ *     description: Returns the health status of the authentication service
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: Auth service is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ok
+ *                 service:
+ *                   type: string
+ *                   example: Lanonasis MCP Auth Service
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ */
+router.get('/health', (req: Request, res: Response) => {
+  // Perform basic health checks
+  let authStatus = 'available';
+  
+  try {
+    // Check if auth service environment variables are set
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+      authStatus = 'degraded';
+    }
+  } catch (error) {
+    console.error('Auth health check error:', error);
+    authStatus = 'degraded';
+  }
+
+  res.status(200).json({
+    status: 'ok',
+    service: 'Lanonasis MCP Auth Service',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    auth_status: authStatus,
+    login_methods: ['password', 'api_key', 'oauth'],
+    capabilities: [
+      'user_authentication',
+      'session_management',
+      'profile_management',
+      'password_reset'
+    ],
+    endpoints: {
+      login: '/auth/login',
+      register: '/auth/register',
+      health: '/auth/health'
+    }
+  });
+});
+
 export default router;
