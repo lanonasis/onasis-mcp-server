@@ -53,17 +53,13 @@ class LocalMCPServer {
   private tools: Record<string, (args: any) => Promise<any>>;
 
   constructor() {
-    this.mcpServer = new Server(
-      {
-        name: 'lanonasis-mcp-server-local',
-        version: '1.0.0',
+    this.mcpServer = new Server({
+      name: 'lanonasis-mcp-server',
+      version: '1.0.0',
+      capabilities: {
+        tools: {},
       },
-      {
-        capabilities: {
-          tools: {},
-        },
-      }
-    );
+    });
 
     this.tools = this.initializeTools();
     this.setupHandlers();

@@ -47,17 +47,13 @@ export class CLIAlignedMCPServer {
   private httpApp?: express.Application;
 
   constructor() {
-    this.server = new Server(
-      {
-        name: 'lanonasis-mcp-server-cli-aligned',
-        version: '1.0.0',
+    this.server = new Server({
+      name: 'lanonasis-mcp-server',
+      version: '1.0.0',
+      capabilities: {
+        tools: {},
       },
-      {
-        capabilities: {
-          tools: {},
-        },
-      }
-    );
+    });
 
     this.setupTools();
     this.setupErrorHandling();
