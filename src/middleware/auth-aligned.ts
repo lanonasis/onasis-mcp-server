@@ -59,7 +59,7 @@ export const alignedAuthMiddleware = async (
           return;
         }
         req.user = user;
-      } else {
+      } else if (authHeader?.startsWith('Bearer ')) {
         // Handle JWT token authentication with Supabase
         const token = authHeader.replace('Bearer ', '');
         
@@ -68,10 +68,11 @@ export const alignedAuthMiddleware = async (
           const { data: { user }, error } = await supabase.auth.getUser(token);
           
           if (error || !user) {
-            return res.status(401).json({
+            res.status(401).json({
               error: 'Invalid or expired token',
               message: 'JWT validation failed'
             });
+            return;
           }
 
           // Get user plan from service config
@@ -99,7 +100,7 @@ export const alignedAuthMiddleware = async (
 
           req.user = alignedUser;
         } catch (jwtError) {
-          return res.status(401).json({
+          res.status(401).json({
             error: 'JWT validation failed',
             message: 'Unable to validate authentication token'
           });
