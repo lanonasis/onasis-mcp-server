@@ -33,17 +33,15 @@ class RemoteMCPClient {
     // List available tools by querying the remote server
     this.server.setRequestHandler('tools/list', async () => {
       try {
-        console.error(`Fetching tools from ${this.baseUrl}/api/v1/tools`);
-        const response = await axios.get(`${this.baseUrl}/api/v1/tools`, {
+        console.error(`Fetching tools from ${this.baseUrl}/api/tools`);
+        const response = await axios.get(`${this.baseUrl}/api/tools`, {
           timeout: 10000
         });
         
-        // Handle both {tools: [...]} and {success: true, data: [...]}
-        const toolsList = response.data.tools || response.data.data || [];
-        if (toolsList.length > 0) {
-          console.error(`Found ${toolsList.length} tools`);
+        if (response.data && response.data.tools) {
+          console.error(`Found ${response.data.tools.length} tools`);
           return {
-            tools: toolsList.map(tool => ({
+            tools: response.data.tools.map(tool => ({
               name: tool.name,
               description: tool.description,
               inputSchema: {
@@ -229,19 +227,15 @@ Connection: ${this.baseUrl}`
 
   async executeToolRemotely(toolName, parameters) {
     try {
-      // Use the correct MCP-Core endpoint: /api/v1/tools/:toolName
-      const response = await axios.post(`${this.baseUrl}/api/v1/tools/${toolName}`, 
-        parameters,
-      {
+      const response = await axios.post(`${this.baseUrl}/api/execute/${toolName}`, {
+        parameters
+      }, {
         timeout: 10000,
         headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': process.env.MCP_API_KEY || ''
+          'Content-Type': 'application/json'
         }
       });
 
-      // Handle MCP-Core response format: {success: true, data: {...}}
-      const result = response.data.data || response.data.result || response.data;
       return {
         content: [
           {
@@ -251,10 +245,11 @@ Tool: ${toolName}
 Parameters: ${JSON.stringify(parameters, null, 2)}
 
 Result:
-${JSON.stringify(result, null, 2)}
+${JSON.stringify(response.data.result, null, 2)}
 
-Status: ${response.data.success ? 'Success' : 'Unknown'}
-Timestamp: ${new Date().toISOString()}`
+Execution Time: ${response.data.execution_time}
+Status: Success
+Timestamp: ${response.data.timestamp}`
           }
         ]
       };

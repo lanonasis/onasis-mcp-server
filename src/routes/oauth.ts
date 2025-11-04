@@ -14,7 +14,7 @@ const router = Router();
 
 // Initialize Redis client for persistent storage
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  retryStrategy: (times) => Math.min(times * 50, 2000),
+  retryDelayOnFailover: 100,
   enableReadyCheck: false,
   maxRetriesPerRequest: null,
 });
