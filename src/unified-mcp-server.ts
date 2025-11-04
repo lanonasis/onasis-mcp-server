@@ -569,10 +569,18 @@ class LanonasisUnifiedMCPServer {
    */
   async startStdioServer() {
     // Create the server definition
-    this.mcpServer = new Server({
-      name: 'lanonasis-mcp-server',
-      version: '1.0.0',
-    });
+    this.mcpServer = new Server(
+      {
+        name: 'lanonasis-mcp-server',
+        version: '1.0.0',
+        description: 'Lanonasis MCP Server - Enterprise Memory as a Service with 17+ tools',
+      },
+      {
+        capabilities: {
+          tools: {},
+        },
+      }
+    );
 
     // List tools handler
     this.mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
