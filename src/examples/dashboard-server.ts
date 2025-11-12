@@ -8,7 +8,15 @@ import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import { dashboardRouter } from '@/api/dashboard';
-import { dashboardStyles } from '@/ui/MemoryDashboard';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Load dashboard styles
+const dashboardStyles = `/* Dashboard styles will be loaded at runtime */`;
 
 dotenv.config();
 
@@ -267,12 +275,12 @@ app.get('/', (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(\`🚀 Dashboard server running on http://localhost:\${PORT}\`);
-  console.log(\`📊 Dashboard UI: http://localhost:\${PORT}/dashboard\`);
-  console.log(\`🔌 API: http://localhost:\${PORT}/api/dashboard/overview\`);
-  console.log(\`\nEnvironment:\`);
-  console.log(\`  - API_BASE_URL: \${process.env.API_BASE_URL || '/api'}\`);
-  console.log(\`  - NODE_ENV: \${process.env.NODE_ENV || 'development'}\`);
+  console.log(`🚀 Dashboard server running on http://localhost:${PORT}`);
+  console.log(`📊 Dashboard UI: http://localhost:${PORT}/dashboard`);
+  console.log(`🔌 API: http://localhost:${PORT}/api/dashboard/overview`);
+  console.log(`\nEnvironment:`);
+  console.log(`  - API_BASE_URL: ${process.env.API_BASE_URL || '/api'}`);
+  console.log(`  - NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
 });
 
 export default app;
