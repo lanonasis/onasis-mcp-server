@@ -768,6 +768,17 @@ class LanonasisUnifiedMCPServer {
       }
     });
 
+    // Dashboard API endpoints
+    try {
+      const { dashboardRouter } = await import('./api/dashboard.js');
+      app.use('/api/dashboard', dashboardRouter);
+      logger.info('Dashboard API routes mounted');
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        logger.warn('Dashboard API routes not available:', error.message);
+      }
+    }
+
     this.httpServer = app.listen(this.config.httpPort, this.config.host, () => {
       logger.info(`HTTP server started on ${this.config.host}:${this.config.httpPort}`);
     });

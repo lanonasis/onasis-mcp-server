@@ -1,0 +1,84 @@
+{
+  "name": "lanonasis-memory",
+  "displayName": "Lanonasis Memory Dashboard",
+  "description": "View and manage Lanonasis memory records from your IDE",
+  "version": "1.0.0",
+  "publisher": "lanonasis",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:lanonasisMemory"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "lanonasis",
+          "title": "Lanonasis Memory",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "lanonasis": [
+        {
+          "id": "lanonasisMemory",
+          "name": "Memory Dashboard",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "lanonasis.refreshMemories",
+        "title": "Lanonasis: Refresh Memories",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "lanonasis.openSettings",
+        "title": "Lanonasis: Open Settings"
+      }
+    ],
+    "configuration": {
+      "title": "Lanonasis Memory",
+      "properties": {
+        "lanonasis.apiBaseUrl": {
+          "type": "string",
+          "default": "http://localhost:3000/api",
+          "description": "Base URL for Lanonasis API"
+        },
+        "lanonasis.userId": {
+          "type": "string",
+          "default": "",
+          "description": "Optional user ID to filter memories"
+        },
+        "lanonasis.refreshInterval": {
+          "type": "number",
+          "default": 30000,
+          "description": "Auto-refresh interval in milliseconds"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.75.0",
+    "@typescript-eslint/eslint-plugin": "^5.0.0",
+    "@typescript-eslint/parser": "^5.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^4.9.0",
+    "vsce": "^2.15.0"
+  }
+}
