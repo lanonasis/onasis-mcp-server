@@ -209,7 +209,7 @@ dashboardRouter.get('/queue/jobs', async (req: Request, res: Response) => {
     }
 
     // Placeholder implementation - would need actual job queue tracking
-    const jobs = [];
+    const jobs: any[] = [];
 
     res.json({
       jobs,
