@@ -7,8 +7,8 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
-import { dashboardRouter } from '../api/dashboard';
-import { dashboardStyles } from '../ui/MemoryDashboard';
+import { dashboardRouter } from '@/api/dashboard';
+import { dashboardStyles } from '@/ui/MemoryDashboard';
 
 dotenv.config();
 
