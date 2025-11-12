@@ -4,8 +4,8 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { MemoryService } from '../services/memoryService';
-import { logger } from '../utils/logger';
+import { MemoryService } from '@/services/memoryService';
+import { logger } from '@/utils/logger';
 
 export const dashboardRouter = Router();
 const memoryService = new MemoryService();
