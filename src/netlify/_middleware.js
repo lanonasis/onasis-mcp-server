@@ -1,6 +1,6 @@
 /**
  * Netlify Edge Functions Middleware
- * 
+ *
  * This middleware provides authentication and audit logging
  * for all Edge Functions in the lanonasis-maas project.
  */
@@ -12,7 +12,7 @@
 const createErrorResponse = (message, statusCode = 400) => {
   return new Response(JSON.stringify({ error: message }), {
     status: statusCode,
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 'Content-Type': 'application/json' },
   });
 };
 
@@ -22,18 +22,20 @@ const createAuditLogger = (projectName) => {
       console.log(`[${projectName}] ${event}:`, details);
     },
     logFunctionCall: (functionName, userId, projectScope) => {
-      console.log(`[${projectName}] Function call: ${functionName}, User: ${userId}, Scope: ${projectScope}`);
-    }
+      console.log(
+        `[${projectName}] Function call: ${functionName}, User: ${userId}, Scope: ${projectScope}`,
+      );
+    },
   };
 };
 
-const createJWTMiddleware = (config) => {
+const createJWTMiddleware = () => {
   return async (request) => {
     const authHeader = request.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return {
         isValid: false,
-        error: 'Missing or invalid authorization header'
+        error: 'Missing or invalid authorization header',
       };
     }
 
@@ -57,13 +59,15 @@ const createJWTMiddleware = (config) => {
     return {
       isValid: true,
       userId: 'placeholder-user',
-      projectScope: 'lanonasis-maas'
+      projectScope: 'lanonasis-maas',
     };
   };
 };
 
 // Configuration with fail-fast validation
-const SUPABASE_URL = (typeof process !== 'undefined' ? process.env.SUPABASE_URL : null) || 'https://lanonasis.supabase.co';
+const SUPABASE_URL =
+  (typeof process !== 'undefined' ? process.env.SUPABASE_URL : null) ||
+  'https://lanonasis.supabase.co';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const PROJECT_NAME = 'lanonasis-maas';
 
@@ -80,15 +84,11 @@ const jwtMiddleware = createJWTMiddleware({
   supabaseUrl: SUPABASE_URL,
   supabaseServiceKey: SUPABASE_SERVICE_KEY,
   projectName: PROJECT_NAME,
-  allowedScopes: ['lanonasis-maas']
+  allowedScopes: ['lanonasis-maas'],
 });
 
 // Paths that don't require authentication
-const PUBLIC_PATHS = [
-  '/health',
-  '/debug',
-  '/api/health'
-];
+const PUBLIC_PATHS = ['/health', '/debug', '/api/health'];
 
 /**
  * Main middleware handler
@@ -98,7 +98,7 @@ export default async function middleware(request) {
   const pathname = url.pathname;
 
   // Skip authentication for public paths
-  if (PUBLIC_PATHS.some(path => pathname.startsWith(path))) {
+  if (PUBLIC_PATHS.some((path) => pathname.startsWith(path))) {
     return;
   }
 
@@ -120,7 +120,7 @@ export default async function middleware(request) {
         method: request.method,
         path: pathname,
         ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-        userAgent: request.headers.get('user-agent') || 'unknown'
+        userAgent: request.headers.get('user-agent') || 'unknown',
       });
 
       return createErrorResponse(validation.error || 'Authentication required', 401);
@@ -130,7 +130,7 @@ export default async function middleware(request) {
     auditLogger.logFunctionCall(
       pathname,
       validation.userId || 'unknown',
-      validation.projectScope || 'unknown'
+      validation.projectScope || 'unknown',
     );
 
     // Add user context to request headers for downstream functions
@@ -144,7 +144,6 @@ export default async function middleware(request) {
 
     // Continue to the actual function - return undefined to allow request to proceed
     return undefined;
-
   } catch (error) {
     // Log middleware errors
     auditLogger.log('middleware_error', {
@@ -154,7 +153,7 @@ export default async function middleware(request) {
       method: request.method,
       path: pathname,
       ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown'
+      userAgent: request.headers.get('user-agent') || 'unknown',
     });
 
     return createErrorResponse('Internal authentication error', 500);
@@ -163,5 +162,5 @@ export default async function middleware(request) {
 
 // Export configuration for Netlify
 export const config = {
-  path: '/api/*'  // Apply middleware to all API routes
+  path: '/api/*', // Apply middleware to all API routes
 };
