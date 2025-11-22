@@ -63,13 +63,6 @@ async function validateInternalApiKey(apiKey: string): Promise<UnifiedUser | nul
       return null;
     }
 
-    // Update last_used tracking if you have such a column
-    // This is optional and depends on your database schema
-    // await supabase
-    //   .from('stored_api_keys')
-    //   .update({ last_used_at: new Date().toISOString() })
-    //   .eq('id', keyRecord.id);
-
     // Create unified user object
     const userId = keyRecord.created_by || keyRecord.organization_id;
     const unifiedUser: UnifiedUser = {
@@ -117,7 +110,7 @@ export const authMiddleware = async (
         logger.debug('Internal API key authenticated', { 
           userId: user.userId,
           organizationId: user.organizationId,
-          apiKeyPrefix: apiKey.substring(0, 20) + '...' 
+          apiKeyPrefix: apiKey.substring(0, 8) + '...' 
         });
         
         next();
@@ -135,7 +128,7 @@ export const authMiddleware = async (
       };
       
       logger.debug('External API key passthrough', { 
-        apiKeyPrefix: apiKey.substring(0, 20) + '...' 
+        apiKeyPrefix: apiKey.substring(0, 8) + '...' 
       });
       
       next();
