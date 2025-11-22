@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import rateLimit from 'express-rate-limit';
-import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { config } from '@/config/environment';
 import { logger } from '@/utils/logger';
 
@@ -137,14 +137,14 @@ export const alignedAuthMiddleware = async (
 
 /**
  * Authenticate using API key from maas_api_keys table
+ * Uses SHA-256 hashing for secure API key comparison
  */
 async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
   try {
-    // Hash the API key for secure comparison
-    const hashedApiKey = await bcrypt.hash(apiKey, 10);
+    // Hash the API key using SHA-256 for secure comparison
+    const hashedApiKey = crypto.createHash('sha256').update(apiKey).digest('hex');
     
-    // In production, you would compare against stored hashed keys
-    // For now, we'll query by the hashed key (assuming keys are stored hashed)
+    // Query for the API key by its hash
     const { data: keyRecord, error } = await supabase
       .from('maas_api_keys')
       .select(`
@@ -154,16 +154,11 @@ async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
         key_hash,
         maas_service_config!inner(plan)
       `)
+      .eq('key_hash', hashedApiKey)
       .eq('is_active', true)
       .single();
 
     if (error || !keyRecord) {
-      return null;
-    }
-
-    // Compare the hashed API key with stored hash
-    const isValidKey = await bcrypt.compare(apiKey, keyRecord.key_hash);
-    if (!isValidKey) {
       return null;
     }
 
@@ -172,11 +167,11 @@ async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
       return null;
     }
 
-    // Update last_used timestamp using the hashed key
+    // Update last_used timestamp
     await supabase
       .from('maas_api_keys')
       .update({ last_used: new Date().toISOString() })
-      .eq('key_hash', keyRecord.key_hash);
+      .eq('key_hash', hashedApiKey);
 
     // Extract plan value to avoid TypeScript errors
     let plan = 'free';
