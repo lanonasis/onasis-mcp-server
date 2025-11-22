@@ -71,12 +71,13 @@ async function validateInternalApiKey(apiKey: string): Promise<UnifiedUser | nul
     //   .eq('id', keyRecord.id);
 
     // Create unified user object
+    const userId = keyRecord.created_by || keyRecord.organization_id;
     const unifiedUser: UnifiedUser = {
-      userId: keyRecord.created_by || keyRecord.organization_id,
+      userId: userId,
       organizationId: keyRecord.organization_id,
       role: keyRecord.access_level || 'user',
       plan: 'pro', // Internal API keys typically have pro access
-      id: keyRecord.created_by || keyRecord.organization_id,
+      id: userId,
       email: '',
       user_metadata: {},
       app_metadata: {}
