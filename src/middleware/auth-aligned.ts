@@ -1,9 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import rateLimit from 'express-rate-limit';
-import bcrypt from 'bcryptjs';
 import { config } from '@/config/environment';
 import { logger } from '@/utils/logger';
+import { ensureApiKeyHash } from '../../../shared/hash-utils';
 
 const supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY);
 
@@ -140,11 +140,9 @@ export const alignedAuthMiddleware = async (
  */
 async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
   try {
-    // Hash the API key for secure comparison
-    const hashedApiKey = await bcrypt.hash(apiKey, 10);
+    // Normalize incoming API key to a deterministic SHA-256 hash
+    const apiKeyHash = ensureApiKeyHash(apiKey);
     
-    // In production, you would compare against stored hashed keys
-    // For now, we'll query by the hashed key (assuming keys are stored hashed)
     const { data: keyRecord, error } = await supabase
       .from('maas_api_keys')
       .select(`
@@ -155,17 +153,14 @@ async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
         maas_service_config!inner(plan)
       `)
       .eq('is_active', true)
+      .eq('key_hash', apiKeyHash)
       .single();
 
     if (error || !keyRecord) {
       return null;
     }
 
-    // Compare the hashed API key with stored hash
-    const isValidKey = await bcrypt.compare(apiKey, keyRecord.key_hash);
-    if (!isValidKey) {
-      return null;
-    }
+    // key_hash comparison handled in query; no further comparison needed
 
     // Check if key is expired
     if (keyRecord.expires_at && new Date() > new Date(keyRecord.expires_at)) {

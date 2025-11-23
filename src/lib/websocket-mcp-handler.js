@@ -9,6 +9,7 @@ import WebSocket, { WebSocketServer } from 'ws';
 import crypto from 'crypto';
 import winston from 'winston';
 import dotenv from 'dotenv';
+import { ensureApiKeyHash } from '../../../shared/hash-utils';
 
 // Import existing onasis-core components
 import { createClient } from '@supabase/supabase-js';
@@ -119,7 +120,7 @@ class EnhancedMCPWebSocketHandler {
       const { data, error } = await this.supabase
         .from('api_keys')
         .select('id, user_id, is_active, plan_type')
-        .eq('key_hash', crypto.createHash('sha256').update(apiKey).digest('hex'))
+        .eq('key_hash', ensureApiKeyHash(apiKey))
         .eq('is_active', true)
         .single();
       
