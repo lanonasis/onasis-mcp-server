@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 import { config } from '@/config/environment';
 import { logger } from '@/utils/logger';
 import { ensureApiKeyHash } from '../../../shared/hash-utils';
@@ -61,17 +62,18 @@ export const alignedAuthMiddleware = async (
         req.user = user;
       } else {
         // Handle JWT token authentication with Supabase
-        const token = authHeader.replace('Bearer ', '');
+        const token = authHeader?.replace('Bearer ', '') || '';
         
         try {
           // Validate JWT token with Supabase
           const { data: { user }, error } = await supabase.auth.getUser(token);
           
           if (error || !user) {
-            return res.status(401).json({
+            res.status(401).json({
               error: 'Invalid or expired token',
               message: 'JWT validation failed'
             });
+            return;
           }
 
           // Get user plan from service config
@@ -99,10 +101,11 @@ export const alignedAuthMiddleware = async (
 
           req.user = alignedUser;
         } catch (jwtError) {
-          return res.status(401).json({
+          res.status(401).json({
             error: 'JWT validation failed',
             message: 'Unable to validate authentication token'
           });
+          return;
         }
       }
 
@@ -137,12 +140,14 @@ export const alignedAuthMiddleware = async (
 
 /**
  * Authenticate using API key from maas_api_keys table
+ * Uses SHA-256 hashing for secure API key comparison
  */
 async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
   try {
-    // Normalize incoming API key to a deterministic SHA-256 hash
-    const apiKeyHash = ensureApiKeyHash(apiKey);
+    // Hash the API key using SHA-256 for secure comparison
+    const hashedApiKey = crypto.createHash('sha256').update(apiKey).digest('hex');
     
+    // Query for the API key by its hash
     const { data: keyRecord, error } = await supabase
       .from('maas_api_keys')
       .select(`
@@ -152,6 +157,7 @@ async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
         key_hash,
         maas_service_config!inner(plan)
       `)
+      .eq('key_hash', hashedApiKey)
       .eq('is_active', true)
       .eq('key_hash', apiKeyHash)
       .single();
@@ -167,11 +173,11 @@ async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
       return null;
     }
 
-    // Update last_used timestamp using the hashed key
+    // Update last_used timestamp
     await supabase
       .from('maas_api_keys')
       .update({ last_used: new Date().toISOString() })
-      .eq('key_hash', keyRecord.key_hash);
+      .eq('key_hash', hashedApiKey);
 
     // Extract plan value to avoid TypeScript errors
     let plan = 'free';

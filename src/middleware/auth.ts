@@ -1,8 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js';
 import { config } from '@/config/environment';
 import { logger } from '@/utils/logger';
 import { JWTPayload } from '@/types/auth';
+
+const supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY);
 
 // Unified user type that works with both JWT and Supabase auth
 export interface UnifiedUser extends JWTPayload {
@@ -19,6 +23,63 @@ declare global {
     interface Request {
       user?: UnifiedUser;
     }
+  }
+}
+
+/**
+ * Validate internal API key from stored_api_keys table
+ * Uses SHA-256 hashing for secure comparison
+ * Checks expiration, revocation, and active status
+ */
+async function validateInternalApiKey(apiKey: string): Promise<UnifiedUser | null> {
+  try {
+    // Hash the API key using SHA-256
+    const hashedApiKey = crypto.createHash('sha256').update(apiKey).digest('hex');
+    
+    // Query for the API key by its hash
+    const { data: keyRecord, error } = await supabase
+      .from('stored_api_keys')
+      .select(`
+        id,
+        name,
+        organization_id,
+        created_by,
+        status,
+        expires_at,
+        access_level
+      `)
+      .eq('encrypted_value', hashedApiKey)
+      .eq('status', 'active')
+      .single();
+
+    if (error || !keyRecord) {
+      logger.debug('Internal API key not found or error', { error: error?.message });
+      return null;
+    }
+
+    // Check if key is expired
+    if (keyRecord.expires_at && new Date() > new Date(keyRecord.expires_at)) {
+      logger.warn('Internal API key expired', { keyId: keyRecord.id });
+      return null;
+    }
+
+    // Create unified user object
+    const userId = keyRecord.created_by || keyRecord.organization_id;
+    const unifiedUser: UnifiedUser = {
+      userId: userId,
+      organizationId: keyRecord.organization_id,
+      role: keyRecord.access_level || 'user',
+      plan: 'pro', // Internal API keys typically have pro access
+      id: userId,
+      email: '',
+      user_metadata: {},
+      app_metadata: {}
+    };
+    
+    return unifiedUser;
+  } catch (error) {
+    logger.error('Internal API key validation error', { error });
+    return null;
   }
 }
 
@@ -39,18 +100,35 @@ export const authMiddleware = async (
     }
     // Check for API key
     else if (apiKey) {
-      // For API key authentication, pass through to lanonasis-maas for validation
+      // Try to validate internal API key first
+      const user = await validateInternalApiKey(apiKey);
+      
+      if (user) {
+        // Internal API key validated successfully
+        req.user = user;
+        
+        logger.debug('Internal API key authenticated', { 
+          userId: user.userId,
+          organizationId: user.organizationId,
+          apiKeyPrefix: apiKey.substring(0, 8) + '...' 
+        });
+        
+        next();
+        return;
+      }
+      
+      // If not an internal API key, pass through for external validation
       // Create a minimal user object that includes the API key for passthrough
       req.user = {
-        userId: 'api-user', // Placeholder - will be resolved by lanonasis-maas
-        organizationId: 'api-org', // Placeholder - will be resolved by lanonasis-maas  
+        userId: 'api-user', // Placeholder - will be resolved by external service
+        organizationId: 'api-org', // Placeholder - will be resolved by external service
         role: 'user',
         plan: 'pro',
         apiKey: apiKey
       };
       
-      logger.debug('API key authentication', { 
-        apiKeyPrefix: apiKey.substring(0, 20) + '...' 
+      logger.debug('External API key passthrough', { 
+        apiKeyPrefix: apiKey.substring(0, 8) + '...' 
       });
       
       next();
