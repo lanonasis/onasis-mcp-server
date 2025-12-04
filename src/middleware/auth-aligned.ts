@@ -146,7 +146,10 @@ async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
   try {
     // Hash the API key using SHA-256 for secure comparison
     const hashedApiKey = crypto.createHash('sha256').update(apiKey).digest('hex');
-    
+    logger.debug('Authenticating external API key', {
+      apiKeyPrefix: apiKey.substring(0, 8) + '...',
+      hashedKeyPrefix: hashedApiKey.substring(0, 16) + '...'
+    });
     // Query for the API key by its hash
     const { data: keyRecord, error } = await supabase
       .from('maas_api_keys')
