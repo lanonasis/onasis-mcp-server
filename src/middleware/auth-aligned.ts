@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import { config } from '@/config/environment';
 import { logger } from '@/utils/logger';
+import { ensureApiKeyHash } from '../../../shared/hash-utils';
 
 const supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY);
 
@@ -158,11 +159,14 @@ async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
       `)
       .eq('key_hash', hashedApiKey)
       .eq('is_active', true)
+      .eq('key_hash', apiKeyHash)
       .single();
 
     if (error || !keyRecord) {
       return null;
     }
+
+    // key_hash comparison handled in query; no further comparison needed
 
     // Check if key is expired
     if (keyRecord.expires_at && new Date() > new Date(keyRecord.expires_at)) {
