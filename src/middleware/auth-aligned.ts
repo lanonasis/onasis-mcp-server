@@ -162,7 +162,6 @@ async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
       `)
       .eq('key_hash', hashedApiKey)
       .eq('is_active', true)
-      .eq('key_hash', apiKeyHash)
       .single();
 
     if (error || !keyRecord) {
