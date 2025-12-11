@@ -179,12 +179,10 @@ async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
       return null;
     }
 
-    // Update last_used timestamp
+    // Note: last_used_at column does not exist in the api_keys table
+    // The migration only added usage_count column
+    // Skipping last_used_at update to avoid database error
     // ✅ ALIGNED: Use public.api_keys
-    await supabase
-      .from('api_keys')
-      .update({ last_used_at: new Date().toISOString() })
-      .eq('key_hash', hashedApiKey);
 
     // Get user plan from maas.organizations via maas.users
     const { data: userData } = await supabase

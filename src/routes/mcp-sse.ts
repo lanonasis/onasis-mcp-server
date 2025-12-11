@@ -38,7 +38,6 @@ const authenticateApiKey = async (req: Request, res: Response, next: NextFunctio
         user_id,
         is_active,
         expires_at,
-        last_used_at,
         usage_count
       `)
       .eq('key_hash', apiKeyHash)
@@ -61,12 +60,12 @@ const authenticateApiKey = async (req: Request, res: Response, next: NextFunctio
       });
     }
 
-    // Update last used timestamp and usage count
+    // Update usage count
     // ✅ ALIGNED: Use public.api_keys
+    // Note: last_used_at column does not exist in the api_keys table, only usage_count was added by migration
     await supabase
       .from('api_keys')
       .update({
-        last_used_at: new Date().toISOString(),
         usage_count: (keyData.usage_count || 0) + 1
       })
       .eq('id', keyData.id);

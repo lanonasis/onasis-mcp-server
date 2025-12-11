@@ -1312,9 +1312,10 @@ class LanonasisUnifiedMCPServer {
 
   async listApiKeysTool(args: ListApiKeysArgs) {
     try {
+      // Note: last_used_at column does not exist in the api_keys table, only usage_count was added by migration
       let query = this.supabase
         .from('api_keys')
-        .select('id, name, key_prefix, access_level, expires_at, is_active, created_at, last_used_at');
+        .select('id, name, key_prefix, access_level, expires_at, is_active, created_at');
 
       if (args.active_only !== false) {
         query = query.eq('is_active', true);
