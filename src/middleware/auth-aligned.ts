@@ -76,15 +76,15 @@ export const alignedAuthMiddleware = async (
             return;
           }
 
-          // Get user plan from service config
-          const { data: serviceConfig, error: configError } = await supabase
-            .from('maas_service_config')
-            .select('plan')
+          // Get user plan from maas.organizations via maas.users
+          const { data: userData, error: configError } = await supabase
+            .from('maas.users')
+            .select('organization_id, maas.organizations!inner(plan)')
             .eq('user_id', user.id)
             .single();
 
-          // Fix serviceConfig handling - .single() returns an object, not an array
-          const plan = serviceConfig?.plan || 'free';
+          // Extract plan from nested organization data
+          const plan = (userData as any)?.['maas.organizations']?.plan || 'free';
 
           const alignedUser: UnifiedUser = {
             // JWTPayload properties (from Supabase user)
@@ -139,7 +139,8 @@ export const alignedAuthMiddleware = async (
 };
 
 /**
- * Authenticate using API key from maas_api_keys table
+ * Authenticate using API key from public.api_keys table
+ * ALIGNED: Dashboard and CLI both write to public.api_keys
  * Uses SHA-256 hashing for secure API key comparison
  */
 async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
@@ -151,14 +152,17 @@ async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
       hashedKeyPrefix: hashedApiKey.substring(0, 16) + '...'
     });
     // Query for the API key by its hash
+    // ✅ ALIGNED: Use public.api_keys (same as Dashboard/CLI)
     const { data: keyRecord, error } = await supabase
-      .from('maas_api_keys')
+      .from('api_keys')
       .select(`
+        id,
         user_id,
         is_active,
         expires_at,
         key_hash,
-        maas_service_config!inner(plan)
+        name,
+        service
       `)
       .eq('key_hash', hashedApiKey)
       .eq('is_active', true)
@@ -176,16 +180,21 @@ async function authenticateApiKey(apiKey: string): Promise<AlignedUser | null> {
     }
 
     // Update last_used timestamp
+    // ✅ ALIGNED: Use public.api_keys
     await supabase
-      .from('maas_api_keys')
-      .update({ last_used: new Date().toISOString() })
+      .from('api_keys')
+      .update({ last_used_at: new Date().toISOString() })
       .eq('key_hash', hashedApiKey);
 
-    // Extract plan value to avoid TypeScript errors
-    let plan = 'free';
-    if (keyRecord && keyRecord.maas_service_config && Array.isArray(keyRecord.maas_service_config) && keyRecord.maas_service_config.length > 0 && keyRecord.maas_service_config[0]) {
-      plan = keyRecord.maas_service_config[0].plan;
-    }
+    // Get user plan from maas.organizations via maas.users
+    const { data: userData } = await supabase
+      .from('maas.users')
+      .select('organization_id, maas.organizations!inner(plan)')
+      .eq('user_id', keyRecord.user_id)
+      .single();
+    
+    // Extract plan from nested organization data
+    const plan = (userData as any)?.['maas.organizations']?.plan || 'free';
 
     const unifiedUser: UnifiedUser = {
       // JWTPayload properties
@@ -311,29 +320,41 @@ export const planBasedRateLimit = () => {
 };
 
 /**
- * Initialize user service configuration if it doesn't exist
+ * Ensure user exists in maas.users with an organization
+ * ALIGNED: Uses maas schema for MaaS-specific user data
  */
-export async function ensureUserServiceConfig(userId: string): Promise<void> {
+export async function ensureMaasUser(userId: string, email?: string): Promise<void> {
   try {
     const { data: existing } = await supabase
-      .from('maas_service_config')
+      .from('maas.users')
       .select('id')
       .eq('user_id', userId)
       .single();
 
     if (!existing) {
-      await supabase
-        .from('maas_service_config')
+      // First, create or get a default organization for this user
+      const { data: org } = await supabase
+        .from('maas.organizations')
         .insert({
-          user_id: userId,
-          plan: 'free',
-          memory_limit: 100,
-          api_calls_per_minute: 60,
-          features: {},
-          settings: {}
-        });
+          name: `User ${userId.slice(0, 8)} Organization`,
+          slug: `user-${userId.slice(0, 8)}-${Date.now()}`,
+          plan: 'free'
+        })
+        .select('id')
+        .single();
+
+      if (org) {
+        await supabase
+          .from('maas.users')
+          .insert({
+            user_id: userId,
+            organization_id: org.id,
+            email: email || '',
+            role: 'admin' // Owner of their own org
+          });
+      }
     }
   } catch (error) {
-    logger.warn('Failed to ensure user service config', { error, userId });
+    logger.warn('Failed to ensure MaaS user', { error, userId });
   }
 }
