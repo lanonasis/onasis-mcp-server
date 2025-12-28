@@ -162,3 +162,4 @@ backup-pm2-dump.json
 backup-onasis-gateway-core/
 *.backup
 *.bak
+.env.production
