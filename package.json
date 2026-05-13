@@ -27,9 +27,9 @@
     "studio": "npm run start:http"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.25.1",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@supabase/supabase-js": "^2.53.0",
-    "axios": "^1.7.7",
+    "axios": "^1.13.6",
     "bcryptjs": "^3.0.2",
     "compression": "^1.7.5",
     "cors": "^2.8.5",
